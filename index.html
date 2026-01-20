@@ -978,13 +978,15 @@
 
             recognition.onend = () => {
                 isListening = false;
-                // If closed manually, don't restart. 
-                // But if stopped by silence, we might want to restart? 
-                // For now, let's just show it stopped.
+                // Android Chrome often ends session even with continuous:true
+                // We must auto-restart if the user didn't explicitly close the modal.
                 if (document.getElementById('voiceModal').style.display === 'flex') {
-                    // It stopped unexpectedly (silence), restart if intended to be continuous?
-                    // Or simply show "Stopped".
-                    document.getElementById('voiceStatus').textContent = "대기 중...";
+                    document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.log("Restart error:", e);
+                    }
                 }
             };
 
