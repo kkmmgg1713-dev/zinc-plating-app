@@ -624,6 +624,30 @@
             font-size: 1.5rem;
             cursor: pointer;
         }
+
+        /* Visual Heartbeat Animation */
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.8);
+                box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 10px rgba(255, 82, 82, 0);
+            }
+
+            100% {
+                transform: scale(0.8);
+                box-shadow: 0 0 0 0 rgba(255, 82, 82, 0);
+            }
+        }
+
+        .voice-visualization.talking {
+            animation: pulse-ring 1.5s infinite;
+            color: #ff5252;
+            /* Change color when talking */
+        }
     </style>
 </head>
 
@@ -1161,6 +1185,9 @@
         // Voice Recognition Functionality
         let recognition = null;
         let shouldBeListening = false; // Explicit user intent flag
+        let isEngineRunning = false; // Actual engine state tracking
+        let watchdogTimer = null;
+        let silenceTimer = null;
 
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1172,29 +1199,31 @@
                 r.lang = 'ko-KR';
 
                 r.onstart = () => {
-                    console.log('Voice recognition started');
+                    console.log('Voice recognition started (onstart)');
+                    isEngineRunning = true;
                     document.getElementById('voiceModal').style.display = 'flex';
                     document.getElementById('voiceStatus').textContent = "듣고 있습니다... 숫자를 말해주세요.";
+                    updateVisualState(true);
                 };
 
                 r.onend = () => {
-                    console.log('Voice recognition ended');
+                    console.log('Voice recognition ended (onend)');
+                    isEngineRunning = false;
+                    updateVisualState(false);
+
                     // Auto-restart if user intended to keep listening
                     if (shouldBeListening) {
-                        document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
-                        setTimeout(() => {
-                            try {
-                                if (shouldBeListening) r.start();
-                            } catch (e) {
-                                console.log("Restart error:", e);
-                            }
-                        }, 100); // Small delay to prevent tight loops
+                        document.getElementById('voiceStatus').textContent = "연결 재시도 중...";
+                        // Let the watchdog handle the restart to avoid tight loop conflicts
                     } else {
                         document.getElementById('voiceModal').style.display = 'none';
                     }
                 };
 
                 r.onresult = (event) => {
+                    // Reset silence timer on any result
+                    resetSilenceDetection();
+
                     let interimTranscript = '';
                     let finalTranscript = '';
 
@@ -1219,29 +1248,117 @@
 
                 r.onerror = (event) => {
                     console.error('Voice error', event.error);
+                    isEngineRunning = false; // Assume dead on error
+
                     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                         shouldBeListening = false;
                         document.getElementById('voiceStatus').textContent = "마이크 권한이 거부되었습니다.";
                         alert("마이크 사용 권한이 필요합니다.");
                     } else if (event.error === 'no-speech') {
-                        // Ignore no-speech, it will trigger onend and restart
+                        // Ignore no-speech, let watchdog restart
                     } else {
-                        document.getElementById('voiceStatus').textContent = "오류 발생: " + event.error;
+                        // For other errors, we might want to recreate the instance
+                        // But for now let watchdog handle restart
                     }
                 };
+
+                // Visual Heartbeat Trigger (Chrome only)
+                if ('onsoundstart' in r) {
+                    r.onsoundstart = () => {
+                        document.querySelector('.voice-visualization').classList.add('talking');
+                    };
+                    r.onsoundend = () => {
+                        document.querySelector('.voice-visualization').classList.remove('talking');
+                    };
+                }
 
                 return r;
             }
 
+            // Watchdog: The key definition for fixing "zombie" state
+            // Checks every 1s if we should be listening but engine is dead
+            function startWatchdog() {
+                if (watchdogTimer) clearInterval(watchdogTimer);
+                watchdogTimer = setInterval(() => {
+                    if (shouldBeListening && !isEngineRunning) {
+                        console.warn('Watchdog: Engine dead while listening. Force restarting...');
+                        restartEngine();
+                    }
+                }, 1000);
+            }
+
+            function stopWatchdog() {
+                if (watchdogTimer) clearInterval(watchdogTimer);
+                watchdogTimer = null;
+            }
+
+            function resetSilenceDetection() {
+                if (silenceTimer) clearTimeout(silenceTimer);
+                silenceTimer = setTimeout(() => {
+                    // Optional: If no speech for 10s, maybe trigger something?
+                    // For now, we trust continuous mode, but sometimes it just stops.
+                    // Watchdog handles the stop.
+                }, 10000);
+            }
+
+            function restartEngine() {
+                try {
+                    if (recognition) recognition.abort();
+                } catch (e) { }
+
+                // Re-create instance to clear any internal frozen state
+                recognition = createRecognition();
+                try {
+                    recognition.start();
+                } catch (e) { console.log("Restart fail:", e); }
+            }
+
+            // Initial creation
             recognition = createRecognition();
 
         } else {
             alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
         }
 
-        // Sound Feedback
+        function updateVisualState(listening) {
+            const vis = document.querySelector('.voice-visualization');
+            if (listening) {
+                vis.style.opacity = '1';
+                vis.textContent = '🎤';
+            } else {
+                vis.style.opacity = '0.5';
+                vis.classList.remove('talking');
+                vis.textContent = '💤';
+            }
+        }
+
+        // Sound Feedback (Previously added, keeping same)
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playSound(type) {
+            // ... existing playSound logic (no changes needed) ...
+            // Re-declaring for completeness if replaced block covers it
+            // But assume we keep the helper function block above unmodified.
+            // Wait, I am replacing the block including 'startVoiceInput', so I should be careful not to delete helpers.
+            // The replace range is 1162 ~ 1460.
+            // Helpers are ABOVE startVoiceInput in previous content? 
+            // Let's check line numbers. helper 'playSound' is around 1244. 
+            // Logic 'processVoiceInput' is around 1384. They are inside the range I am replacing?
+            // YES. I need to include them or exclude them from replacement.
+            // Best to include them to be safe or adjust range.
+            // 'processVoiceInput', 'undoLastInput', 'playSound', 'parseKoreanNumbers' seem to be INSIDE the replaced block in my previous view?
+            // I will include references to them but I should confirm if I need to re-write implementation.
+            // Actually, 'playSound' was at 1244. 'startVoiceInput' is at 1423.
+            // I will try to preserve helpers by NARROWING the replacement range.
+            // Replacing 1161 (let recognition...) down to before 'playSound' (1240s) might be safer for INIT logic.
+            // Then startVoiceInput (1420s) separately.
+            // BUT I need to change `createRecognition` which is at the top.
+            // And I need `shouldBeListening` global variable.
+            // So I will replace the top block, and leave helpers alone?
+            // No, the helpers use `recognition` variable?
+            // `recognition` is global `let recognition = null`.
+
+            // Strategy: Retain helpers, just replace the recognition Setup and start/stop functions.
+
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
@@ -1252,16 +1369,14 @@
             gainNode.connect(audioCtx.destination);
 
             if (type === 'input') {
-                // High pitch beep for success
                 oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
                 oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.1);
                 gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
                 oscillator.start();
                 oscillator.stop(audioCtx.currentTime + 0.1);
             } else if (type === 'undo') {
-                // Low pitch swoop for undo
                 oscillator.type = 'triangle';
                 oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
                 oscillator.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 0.2);
@@ -1274,7 +1389,6 @@
 
         // Undo functionality for Voice Command
         function undoLastInput() {
-            // Find current active input
             let currentInput = document.querySelector('.data-input.current');
             let targetIndex = -1;
 
@@ -1298,18 +1412,15 @@
             }
 
             if (targetIndex !== -1) {
-                // Clear data
                 const allData = getAllData();
                 allData[currentSample].measurements[targetIndex] = null;
 
-                // Update UI
                 const input = document.getElementById(`input-${targetIndex}`);
                 input.value = '';
                 input.classList.remove('filled');
 
-                handleInput(targetIndex, ''); // Recalculate stats
+                handleInput(targetIndex, '');
 
-                // Move Focus Back AND FORCE current class
                 highlightCurrentInput(targetIndex);
                 if (document.getElementById('voiceModal').style.display !== 'flex') {
                     input.focus();
@@ -1322,12 +1433,9 @@
         }
 
         // Helper to Convert Korean text numbers directly to digits
-        // Helper to Convert Korean text numbers directly to digits
         function parseKoreanNumbers(text) {
-            let processed = text.replace(/\s+/g, ''); // Remove spaces first for easier matching
+            let processed = text.replace(/\s+/g, '');
 
-            // 1. Prioritize specific composite patterns (100~110 range)
-            // This prevents "백 이" becoming "100 2" (1002 or 100, 2) and forces "102"
             const specialHundreds = {
                 '백십': '110', '백열': '110',
                 '백구': '109', '백아홉': '109', '일공구': '109',
@@ -1340,17 +1448,15 @@
                 '백이': '102', '백둘': '102', '일공이': '102',
                 '백일': '101', '백하나': '101', '일공일': '101',
                 '백영': '100', '백공': '100', '일공공': '100',
-                '백': '100' // Standalone Baek
+                '백': '100'
             };
 
             for (const [key, val] of Object.entries(specialHundreds)) {
-                // Global replace using split/join is safe here
                 if (processed.includes(key)) {
                     processed = processed.split(key).join(val);
                 }
             }
 
-            // 2. Standard single digit mapping
             const digits = {
                 '영': '0', '공': '0',
                 '일': '1', '하나': '1',
@@ -1371,8 +1477,6 @@
                 }
             }
 
-            // 3. Units handled by standard digits?
-            // "천" -> 1000
             if (processed.includes('천')) processed = processed.replace(/천/g, '1000');
 
             return processed;
@@ -1435,9 +1539,11 @@
             shouldBeListening = true;
             highlightNextEmpty(true);
 
+            startWatchdog(); // Activate watchdog
+
             // Force restart if already running or in unknown state
             try {
-                recognition.abort(); // Stop current session immediately
+                if (recognition) recognition.abort();
             } catch (e) { }
 
             setTimeout(() => {
@@ -1453,6 +1559,8 @@
 
         function stopVoiceInput() {
             shouldBeListening = false;
+            stopWatchdog(); // Kill watchdog
+
             if (recognition) {
                 try {
                     recognition.abort(); // abort() is better than stop() for immediate cleanup
