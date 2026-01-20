@@ -504,7 +504,7 @@
         /* Manual Modal Styles */
         .manual-btn {
             position: absolute;
-            top: 15px;
+            top: 60px;
             right: 15px;
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -1313,14 +1313,65 @@
 
                 handleInput(targetIndex, ''); // Recalculate stats
 
+                // Move Focus Back AND FORCE current class
+                // The key is to make this input 'current' so next inputNumber uses it
+                highlightCurrentInput(targetIndex);
                 if (document.getElementById('voiceModal').style.display !== 'flex') {
                     input.focus();
                 }
 
-                document.getElementById('voiceStatus').textContent = "입력이 취소되었습니다. 다시 말씀해주세요.";
+                document.getElementById('voiceStatus').textContent = `${targetIndex + 1}번이 취소되었습니다. 다시 말씀해주세요.`;
                 playSound('undo');
                 console.log('Undone index:', targetIndex);
             }
+        }
+
+        // Helper to Convert Korean text numbers directly to digits
+        function parseKoreanNumbers(text) {
+            let processed = text;
+            // Simple replacements for common single words
+            const maps = {
+                '영': '0', '공': '0',
+                '일': '1', '하나': '1',
+                '이': '2', '둘': '2',
+                '삼': '3', '셋': '3',
+                '사': '4', '넷': '4',
+                '오': '5', '다섯': '5',
+                '육': '6', '여섯': '6',
+                '칠': '7', '일곱': '7',
+                '팔': '8', '여덟': '8',
+                '구': '9', '아홉': '9',
+                '십': '10', '열': '10',
+                '백': '100',
+                '천': '1000'
+            };
+
+            // Special complex parsing could be needed for "이십오" -> 25
+            // But usually specch engines give digits for complex numbers or mixed text
+            // We will handle specific known failures like "백" or "백 점 이"
+            // "백점이" -> "100.2"
+
+            // 1. Replace "점" with "."
+            processed = processed.replace(/점/g, '.');
+
+            // 2. Handle specific large unit words if isolated
+            // "백" might be "100"
+            if (processed.trim() === '백') return '100';
+
+            // 3. Replace basic digits if they appear as single chars or simple combos
+            // Note: Doing global replace on "일" might break "일요일". Context matters.
+            // But here we expect numbers.
+
+            // Check for "백" followed by number -> "100"
+            // "백 이" -> "102"? or "100 2"?
+            // Let's rely on standard regex for digits, but preprocess specific Korean words 
+            // that the engine failed to convert to digits.
+
+            if (processed.includes('백')) {
+                processed = processed.replace(/백/g, '100');
+            }
+
+            return processed;
         }
 
         let lastProcessedTranscript = '';
@@ -1351,10 +1402,17 @@
             }
 
             let processedText = cleanText;
+
+            // KOREAN NUMBER PRE-PROCESSING
+            processedText = parseKoreanNumbers(processedText);
+
             processedText = processedText.replace(/점/g, '.');
             processedText = processedText.replace(/,/g, '');
+
+            // Extract numbers
             const regex = /[\d]+(\.[\d]+)?/g;
             const matches = processedText.match(regex);
+
             if (matches) {
                 matches.forEach(numberStr => {
                     const numValue = parseFloat(numberStr);
@@ -1441,6 +1499,47 @@
             updateSummaryTable();
         });
     </script>
+
+    <!-- Manual Modal -->
+    <div id="manualModal" class="voice-modal" style="display: none; justify-content: center; align-items: center;">
+        <div class="manual-modal-content">
+            <button class="close-manual-btn" onclick="closeManual()">×</button>
+            <h3 class="manual-title">📖 사용 매뉴얼</h3>
+
+            <div class="manual-section">
+                <h4>🎤 음성 인식 기능</h4>
+                <ul class="manual-list">
+                    <li><span class="manual-badge badge-voice">시작</span> [음성으로 입력하기] 버튼을 누르고 마이크 권한을 허용하세요.</li>
+                    <li><span class="manual-badge badge-voice">입력</span> "12.5", "8" 처럼 숫자를 말하면 자동으로 입력됩니다.</li>
+                    <li><span class="manual-badge badge-voice">연속</span> "10, 20, 30" 처럼 이어서 말하면 순차적으로 입력됩니다.</li>
+                    <li><span class="manual-badge badge-voice">취소</span> 숫자를 잘못 말했다면 <strong>"다시"</strong> 라고 말해보세요. 방금
+                        입력이 취소되고 커서가 돌아갑니다.</li>
+                    <li><span class="manual-badge badge-voice">종료</span> "종료", "닫기" 라고 말하거나 버튼을 누르면 꺼집니다.</li>
+                </ul>
+            </div>
+
+            <div class="manual-section">
+                <h4>💾 자동 저장 & 효과음</h4>
+                <ul class="manual-list">
+                    <li><span class="manual-badge badge-save">자동저장</span> 모든 입력값은 스마트폰에 <strong>실시간 자동 저장</strong>됩니다.
+                        앱을 껐다 켜도 안심하세요.</li>
+                    <li><span class="manual-badge badge-sound">효과음</span> 입력 성공 시 "띠링~", 취소 시 "슈욱~" 소리로 알려줍니다.</li>
+                </ul>
+            </div>
+
+            <div class="manual-section">
+                <h4>💡 꿀팁</h4>
+                <ul class="manual-list">
+                    <li>조용한 곳에서 크롬(Chrome)이나 사파리(Safari) 브라우저를 사용하면 가장 정확합니다.</li>
+                    <li>"백 이십" 처럼 말해도 "120"으로 똑똑하게 변환됩니다.</li>
+                    <li>음성 입력 중에는 키패드가 화면을 가리지 않습니다.</li>
+                </ul>
+            </div>
+
+            <button class="action-btn next" onclick="closeManual()"
+                style="width: 100%; margin-top: 10px;">확인했습니다</button>
+        </div>
+    </div>
 
     <!-- Voice Interface Modal -->
     <div id="voiceModal" class="voice-modal">
