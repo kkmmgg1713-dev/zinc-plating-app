@@ -567,24 +567,36 @@
             margin-bottom: 8px;
             font-size: 0.95rem;
             color: #ddd;
-            display: flex;
-            align-items: flex-start;
+            position: relative;
+            padding-left: 15px;
+            line-height: 1.6;
+            word-break: keep-all;
+            /* Keeps Korean words together */
         }
 
         .manual-list li::before {
             content: '•';
             color: #00d4ff;
-            margin-right: 8px;
+            position: absolute;
+            left: 0;
+            top: 0;
             font-weight: bold;
         }
 
         .manual-badge {
+            display: inline-flex;
+            /* Changed from inline-block for better vertical alignment if needed, or keeping inline-block is fine too */
             display: inline-block;
-            padding: 2px 8px;
+            padding: 2px 6px;
             border-radius: 4px;
             font-size: 0.8rem;
-            margin-right: 5px;
+            margin: 0 4px;
+            /* Add margin on both sides */
             font-weight: bold;
+            vertical-align: middle;
+            /* Aligns badge with text */
+            margin-bottom: 2px;
+            /* Slight spacing */
         }
 
         .badge-voice {
@@ -1310,9 +1322,36 @@
         }
 
         // Helper to Convert Korean text numbers directly to digits
+        // Helper to Convert Korean text numbers directly to digits
         function parseKoreanNumbers(text) {
-            let processed = text;
-            const maps = {
+            let processed = text.replace(/\s+/g, ''); // Remove spaces first for easier matching
+
+            // 1. Prioritize specific composite patterns (100~110 range)
+            // This prevents "백 이" becoming "100 2" (1002 or 100, 2) and forces "102"
+            const specialHundreds = {
+                '백십': '110', '백열': '110',
+                '백구': '109', '백아홉': '109', '일공구': '109',
+                '백팔': '108', '백여덟': '108', '일공팔': '108',
+                '백칠': '107', '백일곱': '107', '일공칠': '107',
+                '백육': '106', '백여섯': '106', '일공육': '106',
+                '백오': '105', '백다섯': '105', '일공오': '105',
+                '백사': '104', '백넷': '104', '일공사': '104',
+                '백삼': '103', '백셋': '103', '일공삼': '103',
+                '백이': '102', '백둘': '102', '일공이': '102',
+                '백일': '101', '백하나': '101', '일공일': '101',
+                '백영': '100', '백공': '100', '일공공': '100',
+                '백': '100' // Standalone Baek
+            };
+
+            for (const [key, val] of Object.entries(specialHundreds)) {
+                // Global replace using split/join is safe here
+                if (processed.includes(key)) {
+                    processed = processed.split(key).join(val);
+                }
+            }
+
+            // 2. Standard single digit mapping
+            const digits = {
                 '영': '0', '공': '0',
                 '일': '1', '하나': '1',
                 '이': '2', '둘': '2',
@@ -1323,16 +1362,19 @@
                 '칠': '7', '일곱': '7',
                 '팔': '8', '여덟': '8',
                 '구': '9', '아홉': '9',
-                '십': '10', '열': '10',
-                '백': '100',
-                '천': '1000'
+                '십': '10', '열': '10'
             };
 
-            processed = processed.replace(/점/g, '.');
-            if (processed.trim() === '백') return '100';
-            if (processed.includes('백')) {
-                processed = processed.replace(/백/g, '100');
+            for (const [key, val] of Object.entries(digits)) {
+                if (processed.includes(key)) {
+                    processed = processed.split(key).join(val);
+                }
             }
+
+            // 3. Units handled by standard digits?
+            // "천" -> 1000
+            if (processed.includes('천')) processed = processed.replace(/천/g, '1000');
+
             return processed;
         }
 
