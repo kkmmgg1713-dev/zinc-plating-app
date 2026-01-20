@@ -1009,17 +1009,19 @@
                 // Common substitutions for Korean speech to text numbers
                 let processedText = transcript;
                 processedText = processedText.replace(/점/g, '.');
+                processedText = processedText.replace(/,/g, ''); // Remove commas
 
-                // Extract numbers
-                const match = processedText.match(/[\d]+(\.[\d]+)?/);
+                // Extract ALL numbers
+                const regex = /[\d]+(\.[\d]+)?/g;
+                const matches = processedText.match(regex);
 
-                if (match) {
-                    const numberStr = match[0];
-                    const numValue = parseFloat(numberStr);
-
-                    if (!isNaN(numValue)) {
-                        inputNumber(numValue);
-                    }
+                if (matches) {
+                    matches.forEach(numberStr => {
+                        const numValue = parseFloat(numberStr);
+                        if (!isNaN(numValue)) {
+                            inputNumber(numValue);
+                        }
+                    });
                 }
             };
 
