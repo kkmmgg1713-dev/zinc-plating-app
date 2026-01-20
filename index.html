@@ -1235,7 +1235,8 @@
             const url = URL.createObjectURL(blob);
 
             link.setAttribute('href', url);
-            link.setAttribute('download', `아연도금두께측정_${materials[currentMaterial].name}_${new Date().toISOString().slice(0, 10)}.csv`);
+            const dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '');
+            link.setAttribute('download', `아연도금두께측정_${materials[currentMaterial].name}_${dateStr}.csv`);
             link.style.visibility = 'hidden';
 
             document.body.appendChild(link);
@@ -1250,135 +1251,129 @@
         let watchdogTimer = null;
         let silenceTimer = null;
 
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-            function createRecognition() {
-                const r = new SpeechRecognition();
-                r.continuous = true;
-                r.interimResults = true;
-                r.lang = 'ko-KR';
+        function createRecognition() {
+            if (!SpeechRecognition) return null;
 
-                r.onstart = () => {
-                    console.log('Voice recognition started (onstart)');
-                    isEngineRunning = true;
-                    document.getElementById('voiceModal').style.display = 'flex';
-                    document.getElementById('voiceStatus').textContent = "듣고 있습니다... 숫자를 말해주세요.";
-                    updateVisualState(true);
-                };
+            const r = new SpeechRecognition();
+            r.continuous = true;
+            r.interimResults = true;
+            r.lang = 'ko-KR';
 
-                r.onend = () => {
-                    console.log('Voice recognition ended (onend)');
-                    isEngineRunning = false;
-                    updateVisualState(false);
+            r.onstart = () => {
+                console.log('Voice recognition started (onstart)');
+                isEngineRunning = true;
+                document.getElementById('voiceModal').style.display = 'flex';
+                document.getElementById('voiceStatus').textContent = "듣고 있습니다... 숫자를 말해주세요.";
+                updateVisualState(true);
+            };
 
-                    // Auto-restart if user intended to keep listening
-                    if (shouldBeListening) {
-                        document.getElementById('voiceStatus').textContent = "연결 재시도 중...";
-                        // Let the watchdog handle the restart to avoid tight loop conflicts
+            r.onend = () => {
+                console.log('Voice recognition ended (onend)');
+                isEngineRunning = false;
+                updateVisualState(false);
+
+                // Auto-restart if user intended to keep listening
+                if (shouldBeListening) {
+                    document.getElementById('voiceStatus').textContent = "연결 재시도 중...";
+                    // Let the watchdog handle the restart to avoid tight loop conflicts
+                } else {
+                    document.getElementById('voiceModal').style.display = 'none';
+                }
+            };
+
+            r.onresult = (event) => {
+                // Reset silence timer on any result
+                resetSilenceDetection();
+
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
                     } else {
-                        document.getElementById('voiceModal').style.display = 'none';
+                        interimTranscript += event.results[i][0].transcript;
                     }
-                };
-
-                r.onresult = (event) => {
-                    // Reset silence timer on any result
-                    resetSilenceDetection();
-
-                    let interimTranscript = '';
-                    let finalTranscript = '';
-
-                    for (let i = event.resultIndex; i < event.results.length; ++i) {
-                        if (event.results[i].isFinal) {
-                            finalTranscript += event.results[i][0].transcript;
-                        } else {
-                            interimTranscript += event.results[i][0].transcript;
-                        }
-                    }
-
-                    if (interimTranscript) {
-                        document.getElementById('voiceResult').textContent = interimTranscript + '...';
-                        document.getElementById('voiceResult').style.color = '#aaa';
-                    }
-                    if (finalTranscript) {
-                        document.getElementById('voiceResult').textContent = finalTranscript;
-                        document.getElementById('voiceResult').style.color = '#00d4ff';
-                        processVoiceInput(finalTranscript);
-                    }
-                };
-
-                r.onerror = (event) => {
-                    console.error('Voice error', event.error);
-                    isEngineRunning = false; // Assume dead on error
-
-                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                        shouldBeListening = false;
-                        document.getElementById('voiceStatus').textContent = "마이크 권한이 거부되었습니다.";
-                        alert("마이크 사용 권한이 필요합니다.");
-                    } else if (event.error === 'no-speech') {
-                        // Ignore no-speech, let watchdog restart
-                    } else {
-                        // For other errors, we might want to recreate the instance
-                        // But for now let watchdog handle restart
-                    }
-                };
-
-                // Visual Heartbeat Trigger (Chrome only)
-                if ('onsoundstart' in r) {
-                    r.onsoundstart = () => {
-                        document.querySelector('.voice-visualization').classList.add('talking');
-                    };
-                    r.onsoundend = () => {
-                        document.querySelector('.voice-visualization').classList.remove('talking');
-                    };
                 }
 
-                return r;
+                if (interimTranscript) {
+                    document.getElementById('voiceResult').textContent = interimTranscript + '...';
+                    document.getElementById('voiceResult').style.color = '#aaa';
+                }
+                if (finalTranscript) {
+                    document.getElementById('voiceResult').textContent = finalTranscript;
+                    document.getElementById('voiceResult').style.color = '#00d4ff';
+                    processVoiceInput(finalTranscript);
+                }
+            };
+
+            r.onerror = (event) => {
+                console.error('Voice error', event.error);
+                isEngineRunning = false; // Assume dead on error
+
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    shouldBeListening = false;
+                    document.getElementById('voiceStatus').textContent = "마이크 권한이 거부되었습니다.";
+                    alert("마이크 사용 권한이 필요합니다.");
+                } else if (event.error === 'no-speech') {
+                    // Ignore no-speech, let watchdog restart
+                } else {
+                    // For other errors, we might want to recreate the instance
+                    // But for now let watchdog handle restart
+                }
+            };
+
+            // Visual Heartbeat Trigger (Chrome only)
+            if ('onsoundstart' in r) {
+                r.onsoundstart = () => {
+                    document.querySelector('.voice-visualization').classList.add('talking');
+                };
+                r.onsoundend = () => {
+                    document.querySelector('.voice-visualization').classList.remove('talking');
+                };
             }
 
-            // Watchdog: The key definition for fixing "zombie" state
-            // Checks every 1s if we should be listening but engine is dead
-            function startWatchdog() {
-                if (watchdogTimer) clearInterval(watchdogTimer);
-                watchdogTimer = setInterval(() => {
-                    if (shouldBeListening && !isEngineRunning) {
-                        console.warn('Watchdog: Engine dead while listening. Force restarting...');
-                        restartEngine();
-                    }
-                }, 1000);
-            }
+            return r;
+        }
 
-            function stopWatchdog() {
-                if (watchdogTimer) clearInterval(watchdogTimer);
-                watchdogTimer = null;
-            }
+        // Watchdog: The key definition for fixing "zombie" state
+        // Checks every 1s if we should be listening but engine is dead
+        function startWatchdog() {
+            if (watchdogTimer) clearInterval(watchdogTimer);
+            watchdogTimer = setInterval(() => {
+                if (shouldBeListening && !isEngineRunning) {
+                    console.warn('Watchdog: Engine dead while listening. Force restarting...');
+                    restartEngine();
+                }
+            }, 1000);
+        }
 
-            function resetSilenceDetection() {
-                if (silenceTimer) clearTimeout(silenceTimer);
-                silenceTimer = setTimeout(() => {
-                    // Optional: If no speech for 10s, maybe trigger something?
-                    // For now, we trust continuous mode, but sometimes it just stops.
-                    // Watchdog handles the stop.
-                }, 10000);
-            }
+        function stopWatchdog() {
+            if (watchdogTimer) clearInterval(watchdogTimer);
+            watchdogTimer = null;
+        }
 
-            function restartEngine() {
-                try {
-                    if (recognition) recognition.abort();
-                } catch (e) { }
+        function resetSilenceDetection() {
+            if (silenceTimer) clearTimeout(silenceTimer);
+            silenceTimer = setTimeout(() => {
+                // Optional: If no speech for 10s, maybe trigger something?
+                // For now, we trust continuous mode, but sometimes it just stops.
+                // Watchdog handles the stop.
+            }, 10000);
+        }
 
-                // Re-create instance to clear any internal frozen state
-                recognition = createRecognition();
-                try {
-                    recognition.start();
-                } catch (e) { console.log("Restart fail:", e); }
-            }
+        function restartEngine() {
+            try {
+                if (recognition) recognition.abort();
+            } catch (e) { }
 
-            // Initial creation
+            // Re-create instance to clear any internal frozen state
             recognition = createRecognition();
-
-        } else {
-            alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
+            try {
+                if (recognition) recognition.start();
+            } catch (e) { console.log("Restart fail:", e); }
         }
 
         function updateVisualState(listening) {
@@ -1391,6 +1386,14 @@
                 vis.classList.remove('talking');
                 vis.textContent = '💤';
             }
+        }
+
+        // Initial creation
+        if (SpeechRecognition) {
+            recognition = createRecognition();
+        } else {
+            // Not supported, alert will be shown when user tries to use it via startVoiceInput check
+            console.log("Speech Recognition API not supported in this browser.");
         }
 
         // Sound Feedback (Previously added, keeping same)
@@ -1502,27 +1505,27 @@
 
             const specialHundreds = {
                 // 109
-                '백구': '109', '백아홉': '109', '일공구': '109',
+                '백구': '109', '백아홉': '109', '일공구': '109', '백9': '109', '100구': '109', '100아홉': '109',
                 // 108
-                '백팔': '108', '백여덟': '108', '일공팔': '108',
+                '백팔': '108', '백여덟': '108', '일공팔': '108', '백8': '108', '100팔': '108', '100여덟': '108',
                 // 107
-                '백칠': '107', '백일곱': '107', '일공칠': '107',
+                '백칠': '107', '백일곱': '107', '일공칠': '107', '백7': '107', '100칠': '107', '100일곱': '107',
                 // 106
-                '백육': '106', '백여섯': '106', '일공육': '106',
+                '백육': '106', '백여섯': '106', '일공육': '106', '백6': '106', '100육': '106', '100여섯': '106',
                 // 105
-                '백오': '105', '백다섯': '105', '일공오': '105',
+                '백오': '105', '백다섯': '105', '일공오': '105', '백5': '105', '100오': '105', '100다섯': '105',
                 // 104
-                '백사': '104', '백넷': '104', '일공사': '104',
+                '백사': '104', '백넷': '104', '일공사': '104', '백4': '104', '100사': '104', '100넷': '104',
                 // 103
-                '백삼': '103', '백셋': '103', '일공삼': '103',
+                '백삼': '103', '백셋': '103', '일공삼': '103', '백3': '103', '100삼': '103', '100셋': '103',
                 // 102
-                '백이': '102', '백둘': '102', '일공이': '102',
+                '백이': '102', '백둘': '102', '일공이': '102', '백2': '102', '100이': '102', '100둘': '102',
                 // 101
-                '백일': '101', '백하나': '101', '일공일': '101',
-                // 110 (Existing but keeping for completeness if needed, logic prioritizes longer matches usually but manual order helps)
-                '백십': '110', '백열': '110',
+                '백일': '101', '백하나': '101', '일공일': '101', '백1': '101', '100일': '101', '100하나': '101',
+                // 110
+                '백십': '110', '백열': '110', '백10': '110', '100십': '110', '100열': '110',
                 // 100
-                '백영': '100', '백공': '100', '일공공': '100',
+                '백영': '100', '백공': '100', '일공공': '100', '백0': '100',
                 '백': '100'
             };
 
