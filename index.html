@@ -609,9 +609,54 @@
 
         // Initialize with one material
         function initializeData() {
-            materials = [createMaterialData(1)];
-            currentMaterial = 0;
-            currentSample = 0;
+            if (loadData()) {
+                // If loaded successfully
+            } else {
+                materials = [createMaterialData(1)];
+                currentMaterial = 0;
+                currentSample = 0;
+            }
+        }
+
+        // Save to LocalStorage
+        function saveData() {
+            const dataToSave = {
+                materials: materials,
+                state: {
+                    currentMaterial: currentMaterial,
+                    currentSample: currentSample
+                }
+            };
+            try {
+                localStorage.setItem('zincPlatingDataV2', JSON.stringify(dataToSave));
+            } catch (e) {
+                console.error("Save failed", e);
+            }
+        }
+
+        // Load from LocalStorage
+        function loadData() {
+            const saved = localStorage.getItem('zincPlatingDataV2');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (parsed && parsed.materials) {
+                        materials = parsed.materials;
+                        // Restore state or default
+                        if (parsed.state) {
+                            currentMaterial = parsed.state.currentMaterial || 0;
+                            currentSample = parsed.state.currentSample || 0;
+                        } else {
+                            currentMaterial = 0;
+                            currentSample = 0;
+                        }
+                        return true;
+                    }
+                } catch (e) {
+                    console.error("Load failed", e);
+                }
+            }
+            return false;
         }
 
         // Add a new material
@@ -620,6 +665,7 @@
             materials.push(createMaterialData(newMaterialNum));
             generateMaterialSelector();
             selectMaterial(materials.length - 1); // Switch to new material
+            saveData();
         }
 
         // Select a material
@@ -633,6 +679,7 @@
             updateProgress();
             updateSummaryTable();
             updateCurrentTitle();
+            saveData();
         }
 
         // Generate material selector buttons
@@ -680,6 +727,7 @@
                 materials[index].name = newName.trim();
                 generateMaterialSelector();
                 updateCurrentTitle();
+                saveData();
             }
         }
 
@@ -767,6 +815,7 @@
             updateResults();
             updateProgress();
             generateSampleSelector();
+            saveData();
         }
 
         // Handle keydown events
@@ -858,6 +907,7 @@
             generateDataGrid();
             updateResults();
             updateProgress();
+            saveData();
         }
 
         // Clear current sample data
@@ -872,6 +922,7 @@
                 updateResults();
                 updateProgress();
                 generateSampleSelector();
+                saveData();
             }
         }
 
@@ -1051,6 +1102,93 @@
             alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
         }
 
+        // Sound Feedback
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            if (type === 'input') {
+                // High pitch beep for success
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+                oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'undo') {
+                // Low pitch swoop for undo
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.2);
+            }
+        }
+
+        // Undo functionality for Voice Command
+        function undoLastInput() {
+            // Find current active input
+            let currentInput = document.querySelector('.data-input.current');
+            let targetIndex = -1;
+
+            if (currentInput) {
+                const currentIndex = parseInt(currentInput.id.split('-')[1]);
+                // If we are at index 0, nothing to undo unless we want to go to previous sample? 
+                // Let's assume undo is for current sample measurements.
+                if (currentIndex > 0) {
+                    targetIndex = currentIndex - 1;
+                } else {
+                    // Already at start
+                    document.getElementById('voiceStatus').textContent = "첫 번째 데이터입니다.";
+                    return;
+                }
+            } else {
+                // If sample is full or focus lost, try to find last filled
+                // But usually 'current' stays on the next empty one.
+                // If we finished 20, 'current' might be gone or waiting.
+                // Let's check last filled in current sample
+                const allData = getAllData();
+                const measurements = allData[currentSample].measurements;
+                for (let i = MEASUREMENTS_PER_SAMPLE - 1; i >= 0; i--) {
+                    if (measurements[i] !== null) {
+                        targetIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (targetIndex !== -1) {
+                // Clear data
+                const allData = getAllData();
+                allData[currentSample].measurements[targetIndex] = null;
+
+                // Update UI
+                const input = document.getElementById(`input-${targetIndex}`);
+                input.value = '';
+                input.classList.remove('filled');
+
+                handleInput(targetIndex, ''); // Recalculate stats
+
+                if (document.getElementById('voiceModal').style.display !== 'flex') {
+                    input.focus();
+                }
+
+                document.getElementById('voiceStatus').textContent = "입력이 취소되었습니다. 다시 말씀해주세요.";
+                playSound('undo');
+                console.log('Undone index:', targetIndex);
+            }
+        }
+
         let lastProcessedTranscript = '';
         let lastProcessedTime = 0;
 
@@ -1071,6 +1209,13 @@
                 stopVoiceInput();
                 return;
             }
+
+            // Undo Command
+            if (cleanText.includes('다시') || cleanText.includes('취소') || cleanText.includes('뒤로')) {
+                undoLastInput();
+                return;
+            }
+
             let processedText = cleanText;
             processedText = processedText.replace(/점/g, '.');
             processedText = processedText.replace(/,/g, '');
@@ -1148,6 +1293,8 @@
                     // Sample full
                     document.getElementById('voiceStatus').textContent = "현재 시료 입력 완료! '다음'이라고 말하거나 버튼을 눌러주세요.";
                 }
+
+                playSound('input');
             }
         }
 
