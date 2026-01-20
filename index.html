@@ -119,6 +119,26 @@
             color: #ffc107;
         }
 
+        .delete-icon {
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #aaa;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .delete-icon:hover {
+            background: rgba(244, 67, 54, 0.3);
+            color: #f44336;
+        }
+
         .add-material-btn {
             flex-shrink: 0;
             padding: 10px 15px;
@@ -855,8 +875,18 @@
                     renameMaterial(i);
                 };
 
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-icon';
+                deleteBtn.innerHTML = '🗑️';
+                deleteBtn.title = '자재 삭제';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteMaterial(i);
+                };
+
                 wrapper.appendChild(btn);
                 wrapper.appendChild(editBtn);
+                wrapper.appendChild(deleteBtn);
                 selector.appendChild(wrapper);
             }
 
@@ -878,6 +908,40 @@
                 generateMaterialSelector();
                 updateCurrentTitle();
                 saveData();
+            }
+        }
+
+        // Delete material
+        function deleteMaterial(index) {
+            const materialName = materials[index].name;
+            if (confirm(`"${materialName}" 자재를 삭제하시겠습니까?`)) {
+                // If it's the last remaining material, reset it
+                if (materials.length === 1) {
+                    materials = [createMaterialData(1)];
+                    currentMaterial = 0;
+                    currentSample = 0;
+                    alert('모든 자재가 삭제되어 초기화되었습니다.');
+                } else {
+                    // Remove the material
+                    materials.splice(index, 1);
+                    // Adjust currentMaterial index
+                    if (currentMaterial >= materials.length) {
+                        currentMaterial = materials.length - 1;
+                    } else if (currentMaterial === index) {
+                        // Stay on same index unless it was the last one, handled above
+                        // But if we delete index 0 and we are on index 0, we stay on 0 components shift up
+                        // effectively switching to the next one.
+                        // If we delete a material BEFORE the current one, current index should decrement
+                        // actually wait. Safe bet:
+                        currentMaterial = Math.max(0, currentMaterial - 1);
+                    } else if (index < currentMaterial) {
+                        currentMaterial--;
+                    }
+                    currentSample = 0;
+                }
+
+                generateMaterialSelector();
+                selectMaterial(currentMaterial);
             }
         }
 
@@ -1668,7 +1732,8 @@
                     <li><span class="manual-badge badge-voice">입력</span> 숫자를 말하면 자동으로 입력됩니다. (예: "12.5")</li>
                     <li><span class="manual-badge badge-voice">다시</span> 숫자를 잘못 입력했을 때 <strong>"다시"</strong>라고 말하면 방금
                         입력한 값이 취소됩니다.</li>
-                    <li style="color: #bbb; margin-top: 5px;">※ 100~110 구간의 숫자가 잘 인식되지 않을 경우 "일공공", "일공사"와 같이 한 글자씩 끊어서 말하면 인식률이 높아집니다.</li>
+                    <li style="color: #bbb; margin-top: 5px;">※ 100~110 구간의 숫자가 잘 인식되지 않을 경우 "일공공", "일공사"와 같이 한 글자씩 끊어서
+                        말하면 인식률이 높아집니다.</li>
                 </ul>
             </div>
 
