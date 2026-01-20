@@ -1435,25 +1435,47 @@
         // Helper to Convert Korean text numbers directly to digits
         function parseKoreanNumbers(text) {
             let processed = text.replace(/\s+/g, '');
+            
+            // Handle homophones first
+            processed = processed.replace(/빽/g, '백');
 
             const specialHundreds = {
-                '백십': '110', '백열': '110',
+                // 109
                 '백구': '109', '백아홉': '109', '일공구': '109',
+                // 108
                 '백팔': '108', '백여덟': '108', '일공팔': '108',
+                // 107
                 '백칠': '107', '백일곱': '107', '일공칠': '107',
+                // 106
                 '백육': '106', '백여섯': '106', '일공육': '106',
+                // 105
                 '백오': '105', '백다섯': '105', '일공오': '105',
+                // 104
                 '백사': '104', '백넷': '104', '일공사': '104',
+                // 103
                 '백삼': '103', '백셋': '103', '일공삼': '103',
+                // 102
                 '백이': '102', '백둘': '102', '일공이': '102',
+                // 101
                 '백일': '101', '백하나': '101', '일공일': '101',
+                // 110 (Existing but keeping for completeness if needed, logic prioritizes longer matches usually but manual order helps)
+                '백십': '110', '백열': '110', 
+                // 100
                 '백영': '100', '백공': '100', '일공공': '100',
                 '백': '100'
             };
 
-            for (const [key, val] of Object.entries(specialHundreds)) {
-                if (processed.includes(key)) {
-                    processed = processed.split(key).join(val);
+            // Process explicit maps (Order matters: longer keys should be checked first if using simple replace,
+            // but the previous loop method `Object.entries` doesn't guarantee order unless keys are sorted.
+            // However, the specific issue "Back + 5" appearing as "1005" is because "Back" is replaced by 100 and "5" by 5.
+            // If "Back5" is in the map, it will be replaced by "105" first IF we check it first.
+            // To ensure safety, we can sort keys by length descending.)
+            
+            const sortedKeys = Object.keys(specialHundreds).sort((a, b) => b.length - a.length);
+
+            for (const key of sortedKeys) {
+                 if (processed.includes(key)) {
+                    processed = processed.split(key).join(specialHundreds[key]);
                 }
             }
 
