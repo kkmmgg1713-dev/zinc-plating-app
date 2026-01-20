@@ -500,13 +500,126 @@
             width: 100%;
             margin-bottom: 10px;
         }
+
+        /* Manual Modal Styles */
+        .manual-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.2rem;
+            transition: all 0.3s;
+            z-index: 10;
+        }
+
+        .manual-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .manual-modal-content {
+            background: #1a1a2e;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            border-radius: 20px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .manual-title {
+            color: #00d4ff;
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+
+        .manual-section {
+            margin-bottom: 20px;
+        }
+
+        .manual-section h4 {
+            color: #e91e63;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+
+        .manual-list {
+            list-style: none;
+            padding-left: 5px;
+        }
+
+        .manual-list li {
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+            color: #ddd;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .manual-list li::before {
+            content: '•';
+            color: #00d4ff;
+            margin-right: 8px;
+            font-weight: bold;
+        }
+
+        .manual-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+
+        .badge-voice {
+            background: rgba(33, 150, 243, 0.2);
+            color: #2196f3;
+        }
+
+        .badge-save {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .badge-sound {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .close-manual-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: transparent;
+            border: none;
+            color: #aaa;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <header>
+        <header style="position: relative;">
             <h1>🔬 아연도금두께 측정 프로그램</h1>
+            <button class="manual-btn" onclick="openManual()">❔</button>
         </header>
 
         <div class="material-section">
@@ -846,6 +959,27 @@
             const input = document.getElementById(`input-${index}`);
             if (input) {
                 input.classList.add('current');
+            }
+        }
+
+        /* Manual Modal Logic */
+        function openManual() {
+            document.getElementById('manualModal').style.display = 'flex';
+        }
+
+        function closeManual() {
+            document.getElementById('manualModal').style.display = 'none';
+        }
+
+        // Close modal if clicking outside
+        window.onclick = function (event) {
+            const voiceModal = document.getElementById('voiceModal');
+            const manualModal = document.getElementById('manualModal');
+            if (event.target == voiceModal) {
+                // Do not close voice modal on outside click to prevent accidental stops
+            }
+            if (event.target == manualModal) {
+                closeManual();
             }
         }
 
