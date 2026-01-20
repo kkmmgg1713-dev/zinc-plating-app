@@ -1148,90 +1148,81 @@
 
         // Voice Recognition Functionality
         let recognition = null;
-        let isListening = false;
+        let shouldBeListening = false; // Explicit user intent flag
 
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true; // Changed to true for faster visual feedback
-            recognition.lang = 'ko-KR';
 
-            recognition.onstart = () => {
-                isListening = true;
-                document.getElementById('voiceModal').style.display = 'flex';
-                document.getElementById('voiceStatus').textContent = "듣고 있습니다... 숫자를 말해주세요.";
-            };
+            function createRecognition() {
+                const r = new SpeechRecognition();
+                r.continuous = true;
+                r.interimResults = true;
+                r.lang = 'ko-KR';
 
-            recognition.onend = () => {
-                isListening = false;
-                // Auto-restart immediately to reduce gap and maintain context
-                if (document.getElementById('voiceModal').style.display === 'flex') {
-                    document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
-                    try {
-                        recognition.start();
-                    } catch (e) {
-                        // Ignore 'already started' errors
-                        if (e.name !== 'InvalidStateError') {
-                            console.log("Restart error:", e);
-                        }
-                    }
-                }
-            };
+                r.onstart = () => {
+                    console.log('Voice recognition started');
+                    document.getElementById('voiceModal').style.display = 'flex';
+                    document.getElementById('voiceStatus').textContent = "듣고 있습니다... 숫자를 말해주세요.";
+                };
 
-            recognition.onresult = (event) => {
-                let interimTranscript = '';
-                let finalTranscript = '';
-
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript;
+                r.onend = () => {
+                    console.log('Voice recognition ended');
+                    // Auto-restart if user intended to keep listening
+                    if (shouldBeListening) {
+                        document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
+                        setTimeout(() => {
+                            try {
+                                if (shouldBeListening) r.start();
+                            } catch (e) {
+                                console.log("Restart error:", e);
+                            }
+                        }, 100); // Small delay to prevent tight loops
                     } else {
-                        interimTranscript += event.results[i][0].transcript;
+                        document.getElementById('voiceModal').style.display = 'none';
                     }
-                }
+                };
 
-                if (interimTranscript) {
-                    document.getElementById('voiceResult').textContent = interimTranscript + '...';
-                    document.getElementById('voiceResult').style.color = '#aaa';
-                }
-                if (finalTranscript) {
-                    document.getElementById('voiceResult').textContent = finalTranscript;
-                    document.getElementById('voiceResult').style.color = '#00d4ff';
-                    processVoiceInput(finalTranscript);
-                }
-                return;
+                r.onresult = (event) => {
+                    let interimTranscript = '';
+                    let finalTranscript = '';
 
-
-
-                // Process Numbers
-                // Replace Korean number words with digits just in case, though usually engines return digits for numbers
-                // "십이 점 오" -> "12.5" handling is often needed.
-                // Simple regex extraction first.
-
-                // Common substitutions for Korean speech to text numbers
-                let processedText = transcript;
-                processedText = processedText.replace(/점/g, '.');
-                processedText = processedText.replace(/,/g, ''); // Remove commas
-
-                // Extract ALL numbers
-                const regex = /[\d]+(\.[\d]+)?/g;
-                const matches = processedText.match(regex);
-
-                if (matches) {
-                    matches.forEach(numberStr => {
-                        const numValue = parseFloat(numberStr);
-                        if (!isNaN(numValue)) {
-                            inputNumber(numValue);
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        if (event.results[i].isFinal) {
+                            finalTranscript += event.results[i][0].transcript;
+                        } else {
+                            interimTranscript += event.results[i][0].transcript;
                         }
-                    });
-                }
-            };
+                    }
 
-            recognition.onerror = (event) => {
-                console.error('Voice error', event.error);
-                document.getElementById('voiceStatus').textContent = "오류 발생: " + event.error;
-            };
+                    if (interimTranscript) {
+                        document.getElementById('voiceResult').textContent = interimTranscript + '...';
+                        document.getElementById('voiceResult').style.color = '#aaa';
+                    }
+                    if (finalTranscript) {
+                        document.getElementById('voiceResult').textContent = finalTranscript;
+                        document.getElementById('voiceResult').style.color = '#00d4ff';
+                        processVoiceInput(finalTranscript);
+                    }
+                };
+
+                r.onerror = (event) => {
+                    console.error('Voice error', event.error);
+                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                        shouldBeListening = false;
+                        document.getElementById('voiceStatus').textContent = "마이크 권한이 거부되었습니다.";
+                        alert("마이크 사용 권한이 필요합니다.");
+                    } else if (event.error === 'no-speech') {
+                        // Ignore no-speech, it will trigger onend and restart
+                    } else {
+                        document.getElementById('voiceStatus').textContent = "오류 발생: " + event.error;
+                    }
+                };
+
+                return r;
+            }
+
+            recognition = createRecognition();
+
         } else {
             alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
         }
@@ -1277,20 +1268,13 @@
 
             if (currentInput) {
                 const currentIndex = parseInt(currentInput.id.split('-')[1]);
-                // If we are at index 0, nothing to undo unless we want to go to previous sample? 
-                // Let's assume undo is for current sample measurements.
                 if (currentIndex > 0) {
                     targetIndex = currentIndex - 1;
                 } else {
-                    // Already at start
                     document.getElementById('voiceStatus').textContent = "첫 번째 데이터입니다.";
                     return;
                 }
             } else {
-                // If sample is full or focus lost, try to find last filled
-                // But usually 'current' stays on the next empty one.
-                // If we finished 20, 'current' might be gone or waiting.
-                // Let's check last filled in current sample
                 const allData = getAllData();
                 const measurements = allData[currentSample].measurements;
                 for (let i = MEASUREMENTS_PER_SAMPLE - 1; i >= 0; i--) {
@@ -1314,7 +1298,6 @@
                 handleInput(targetIndex, ''); // Recalculate stats
 
                 // Move Focus Back AND FORCE current class
-                // The key is to make this input 'current' so next inputNumber uses it
                 highlightCurrentInput(targetIndex);
                 if (document.getElementById('voiceModal').style.display !== 'flex') {
                     input.focus();
@@ -1329,7 +1312,6 @@
         // Helper to Convert Korean text numbers directly to digits
         function parseKoreanNumbers(text) {
             let processed = text;
-            // Simple replacements for common single words
             const maps = {
                 '영': '0', '공': '0',
                 '일': '1', '하나': '1',
@@ -1346,31 +1328,11 @@
                 '천': '1000'
             };
 
-            // Special complex parsing could be needed for "이십오" -> 25
-            // But usually specch engines give digits for complex numbers or mixed text
-            // We will handle specific known failures like "백" or "백 점 이"
-            // "백점이" -> "100.2"
-
-            // 1. Replace "점" with "."
             processed = processed.replace(/점/g, '.');
-
-            // 2. Handle specific large unit words if isolated
-            // "백" might be "100"
             if (processed.trim() === '백') return '100';
-
-            // 3. Replace basic digits if they appear as single chars or simple combos
-            // Note: Doing global replace on "일" might break "일요일". Context matters.
-            // But here we expect numbers.
-
-            // Check for "백" followed by number -> "100"
-            // "백 이" -> "102"? or "100 2"?
-            // Let's rely on standard regex for digits, but preprocess specific Korean words 
-            // that the engine failed to convert to digits.
-
             if (processed.includes('백')) {
                 processed = processed.replace(/백/g, '100');
             }
-
             return processed;
         }
 
@@ -1381,9 +1343,7 @@
             const cleanText = transcript.trim();
             const now = Date.now();
 
-            // De-duplication: Ignore exact same input within 1 second
             if (cleanText === lastProcessedTranscript && (now - lastProcessedTime < 1000)) {
-                console.log('Duplicate ignored:', cleanText);
                 return;
             }
 
@@ -1395,21 +1355,16 @@
                 return;
             }
 
-            // Undo Command
             if (cleanText.includes('다시') || cleanText.includes('취소') || cleanText.includes('뒤로')) {
                 undoLastInput();
                 return;
             }
 
             let processedText = cleanText;
-
-            // KOREAN NUMBER PRE-PROCESSING
             processedText = parseKoreanNumbers(processedText);
-
             processedText = processedText.replace(/점/g, '.');
             processedText = processedText.replace(/,/g, '');
 
-            // Extract numbers
             const regex = /[\d]+(\.[\d]+)?/g;
             const matches = processedText.match(regex);
 
@@ -1429,26 +1384,37 @@
                 return;
             }
 
-            // HTTPS Check (Microphone also requires secure context usually)
+            // check https
             if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
                 alert('음성 인식 기능은 보안 문제로 HTTPS 또는 localhost 환경에서만 작동합니다.');
                 return;
             }
 
-            // Find valid input to start with (Skip focus to avoid keyboard)
+            shouldBeListening = true;
             highlightNextEmpty(true);
 
+            // Force restart if already running or in unknown state
             try {
-                recognition.start();
-            } catch (e) {
-                // Already started?
-                console.log(e);
-            }
+                recognition.abort(); // Stop current session immediately
+            } catch (e) { }
+
+            setTimeout(() => {
+                if (shouldBeListening) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.log("Start error:", e);
+                    }
+                }
+            }, 100);
         }
 
         function stopVoiceInput() {
+            shouldBeListening = false;
             if (recognition) {
-                recognition.stop();
+                try {
+                    recognition.abort(); // abort() is better than stop() for immediate cleanup
+                } catch (e) { }
             }
             document.getElementById('voiceModal').style.display = 'none';
         }
@@ -1507,32 +1473,45 @@
             <h3 class="manual-title">📖 사용 매뉴얼</h3>
 
             <div class="manual-section">
-                <h4>🎤 음성 인식 기능</h4>
+                <h4>1. 자재추가</h4>
+                <ul class="manual-list">
+                    <li>자재 선택 영역 우측의 <span class="manual-badge" style="border: 1px dashed #aaa; color: #aaa;">+ 자재
+                            추가</span> 버튼을 누르면 새로운 자재 탭이 생성됩니다.</li>
+                </ul>
+            </div>
+
+            <div class="manual-section">
+                <h4>2. 자재명 변경방법</h4>
+                <ul class="manual-list">
+                    <li>자재 이름 옆의 <span class="manual-badge" style="background: rgba(255, 255, 255, 0.1);">✏️</span> 아이콘을
+                        클릭하면 자재 이름을 변경할 수 있습니다.</li>
+                </ul>
+            </div>
+
+            <div class="manual-section">
+                <h4>3. 음성인식 방법</h4>
                 <ul class="manual-list">
                     <li><span class="manual-badge badge-voice">시작</span> [음성으로 입력하기] 버튼을 누르고 마이크 권한을 허용하세요.</li>
-                    <li><span class="manual-badge badge-voice">입력</span> "12.5", "8" 처럼 숫자를 말하면 자동으로 입력됩니다.</li>
-                    <li><span class="manual-badge badge-voice">연속</span> "10, 20, 30" 처럼 이어서 말하면 순차적으로 입력됩니다.</li>
-                    <li><span class="manual-badge badge-voice">취소</span> 숫자를 잘못 말했다면 <strong>"다시"</strong> 라고 말해보세요. 방금
-                        입력이 취소되고 커서가 돌아갑니다.</li>
-                    <li><span class="manual-badge badge-voice">종료</span> "종료", "닫기" 라고 말하거나 버튼을 누르면 꺼집니다.</li>
+                    <li><span class="manual-badge badge-voice">입력</span> 숫자를 말하면 자동으로 입력됩니다. (예: "12.5")</li>
+                    <li><span class="manual-badge badge-voice">다시</span> 숫자를 잘못 입력했을 때 <strong>"다시"</strong>라고 말하면 방금
+                        입력한 값이 취소됩니다.</li>
                 </ul>
             </div>
 
             <div class="manual-section">
-                <h4>💾 자동 저장 & 효과음</h4>
+                <h4>4. 자동저장기능</h4>
                 <ul class="manual-list">
-                    <li><span class="manual-badge badge-save">자동저장</span> 모든 입력값은 스마트폰에 <strong>실시간 자동 저장</strong>됩니다.
-                        앱을 껐다 켜도 안심하세요.</li>
-                    <li><span class="manual-badge badge-sound">효과음</span> 입력 성공 시 "띠링~", 취소 시 "슈욱~" 소리로 알려줍니다.</li>
+                    <li><span class="manual-badge badge-save">자동저장</span> 모든 데이터는 입력 즉시 브라우저에 자동 저장되어, 앱을 종료해도 데이터가
+                        유지됩니다.</li>
                 </ul>
             </div>
 
             <div class="manual-section">
-                <h4>💡 꿀팁</h4>
+                <h4>5. 데이터 내보내기 기능</h4>
                 <ul class="manual-list">
-                    <li>조용한 곳에서 크롬(Chrome)이나 사파리(Safari) 브라우저를 사용하면 가장 정확합니다.</li>
-                    <li>"백 이십" 처럼 말해도 "120"으로 똑똑하게 변환됩니다.</li>
-                    <li>음성 입력 중에는 키패드가 화면을 가리지 않습니다.</li>
+                    <li>화면 하단의 <span class="manual-badge"
+                            style="background: linear-gradient(135deg, #9c27b0, #e91e63);">📤 데이터 내보내기</span> 버튼을 누르면 현재
+                        자재의 측정 데이터를 엑셀(CSV) 파일로 저장할 수 있습니다.</li>
                 </ul>
             </div>
 
