@@ -966,9 +966,9 @@
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
-            recognition.continuous = true; // Keep listening
-            recognition.interimResults = false;
-            recognition.lang = 'ko-KR'; // Korean for voice commands, but numbers are universal
+            recognition.continuous = true;
+            recognition.interimResults = true; // Changed to true for faster visual feedback
+            recognition.lang = 'ko-KR';
 
             recognition.onstart = () => {
                 isListening = true;
@@ -978,30 +978,46 @@
 
             recognition.onend = () => {
                 isListening = false;
-                // Android Chrome often ends session even with continuous:true
-                // We must auto-restart if the user didn't explicitly close the modal.
+                // Auto-restart with delay to prevent permission spam/issues
                 if (document.getElementById('voiceModal').style.display === 'flex') {
-                    document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
-                    try {
-                        recognition.start();
-                    } catch (e) {
-                        console.log("Restart error:", e);
-                    }
+                    document.getElementById('voiceStatus').textContent = "잠시 대기 중...";
+                    setTimeout(() => {
+                        try {
+                            if (document.getElementById('voiceModal').style.display === 'flex') {
+                                document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
+                                recognition.start();
+                            }
+                        } catch (e) {
+                            console.log("Restart error:", e);
+                        }
+                    }, 500);
                 }
             };
 
             recognition.onresult = (event) => {
-                const transcript = event.results[event.results.length - 1][0].transcript.trim();
-                const confidence = event.results[event.results.length - 1][0].confidence;
+                let interimTranscript = '';
+                let finalTranscript = '';
 
-                console.log('Voice result:', transcript, confidence);
-                document.getElementById('voiceResult').textContent = transcript;
-
-                // Process Commands
-                if (transcript.includes('종료') || transcript.includes('그만') || transcript.includes('닫기')) {
-                    stopVoiceInput();
-                    return;
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
                 }
+
+                if (interimTranscript) {
+                    document.getElementById('voiceResult').textContent = interimTranscript + '...';
+                    document.getElementById('voiceResult').style.color = '#aaa';
+                }
+                if (finalTranscript) {
+                    document.getElementById('voiceResult').textContent = finalTranscript;
+                    document.getElementById('voiceResult').style.color = '#00d4ff';
+                    processVoiceInput(finalTranscript);
+                }
+                return;
+
+
 
                 // Process Numbers
                 // Replace Korean number words with digits just in case, though usually engines return digits for numbers
@@ -1033,6 +1049,27 @@
             };
         } else {
             alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
+        }
+
+        function processVoiceInput(transcript) {
+            const cleanText = transcript.trim();
+            if (cleanText.includes('종료') || cleanText.includes('그만') || cleanText.includes('닫기')) {
+                stopVoiceInput();
+                return;
+            }
+            let processedText = cleanText;
+            processedText = processedText.replace(/점/g, '.');
+            processedText = processedText.replace(/,/g, '');
+            const regex = /[\d]+(\.[\d]+)?/g;
+            const matches = processedText.match(regex);
+            if (matches) {
+                matches.forEach(numberStr => {
+                    const numValue = parseFloat(numberStr);
+                    if (!isNaN(numValue)) {
+                        inputNumber(numValue);
+                    }
+                });
+            }
         }
 
         function startVoiceInput() {
