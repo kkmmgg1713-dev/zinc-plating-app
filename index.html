@@ -866,11 +866,8 @@
                 btn.textContent = materials[i].name;
                 btn.onclick = () => selectMaterial(i);
 
-                const editBtn = document.createElement('button');
-                editBtn.className = 'edit-icon';
-                editBtn.innerHTML = '✏️';
-                editBtn.title = '이름 변경';
-                editBtn.onclick = (e) => {
+                // Double click to rename
+                btn.ondblclick = (e) => {
                     e.stopPropagation();
                     renameMaterial(i);
                 };
@@ -885,7 +882,6 @@
                 };
 
                 wrapper.appendChild(btn);
-                wrapper.appendChild(editBtn);
                 wrapper.appendChild(deleteBtn);
                 selector.appendChild(wrapper);
             }
@@ -1010,7 +1006,7 @@
             }
 
             // Highlight first empty input
-            highlightNextEmpty();
+            highlightNextEmpty(true);
         }
 
         // Handle input change
@@ -1720,8 +1716,7 @@
             <div class="manual-section">
                 <h4>2. 자재명 변경방법</h4>
                 <ul class="manual-list">
-                    <li>자재 이름 옆의 <span class="manual-badge" style="background: rgba(255, 255, 255, 0.1);">✏️</span> 아이콘을
-                        클릭하면 자재 이름을 변경할 수 있습니다.</li>
+                    <li>자재 이름을 <strong>더블 클릭</strong>하면 자재 이름을 변경할 수 있습니다.</li>
                 </ul>
             </div>
 
