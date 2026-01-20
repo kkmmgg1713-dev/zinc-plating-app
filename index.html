@@ -978,19 +978,17 @@
 
             recognition.onend = () => {
                 isListening = false;
-                // Auto-restart with delay to prevent permission spam/issues
+                // Auto-restart immediately to reduce gap and maintain context
                 if (document.getElementById('voiceModal').style.display === 'flex') {
-                    document.getElementById('voiceStatus').textContent = "잠시 대기 중...";
-                    setTimeout(() => {
-                        try {
-                            if (document.getElementById('voiceModal').style.display === 'flex') {
-                                document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
-                                recognition.start();
-                            }
-                        } catch (e) {
+                    document.getElementById('voiceStatus').textContent = "다시 듣는 중...";
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        // Ignore 'already started' errors
+                        if (e.name !== 'InvalidStateError') {
                             console.log("Restart error:", e);
                         }
-                    }, 500);
+                    }
                 }
             };
 
