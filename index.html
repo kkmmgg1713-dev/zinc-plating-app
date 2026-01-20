@@ -1051,8 +1051,22 @@
             alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
         }
 
+        let lastProcessedTranscript = '';
+        let lastProcessedTime = 0;
+
         function processVoiceInput(transcript) {
             const cleanText = transcript.trim();
+            const now = Date.now();
+
+            // De-duplication: Ignore exact same input within 1 second
+            if (cleanText === lastProcessedTranscript && (now - lastProcessedTime < 1000)) {
+                console.log('Duplicate ignored:', cleanText);
+                return;
+            }
+
+            lastProcessedTranscript = cleanText;
+            lastProcessedTime = now;
+
             if (cleanText.includes('종료') || cleanText.includes('그만') || cleanText.includes('닫기')) {
                 stopVoiceInput();
                 return;
