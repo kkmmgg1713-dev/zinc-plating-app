@@ -801,14 +801,16 @@
         }
 
         // Find and highlight next empty input
-        function highlightNextEmpty() {
+        function highlightNextEmpty(skipFocus = false) {
             const allData = getAllData();
             for (let i = 0; i < MEASUREMENTS_PER_SAMPLE; i++) {
                 if (allData[currentSample].measurements[i] === null) {
                     const input = document.getElementById(`input-${i}`);
                     if (input) {
                         input.classList.add('current');
-                        input.focus();
+                        if (!skipFocus) {
+                            input.focus();
+                        }
                     }
                     break;
                 }
@@ -1082,8 +1084,8 @@
                 return;
             }
 
-            // Find valid input to start with
-            highlightNextEmpty();
+            // Find valid input to start with (Skip focus to avoid keyboard)
+            highlightNextEmpty(true);
 
             try {
                 recognition.start();
@@ -1123,7 +1125,11 @@
                 if (nextIndex < MEASUREMENTS_PER_SAMPLE) {
                     highlightCurrentInput(nextIndex);
                     const nextInput = document.getElementById(`input-${nextIndex}`);
-                    if (nextInput) nextInput.focus();
+
+                    // Only focus if Voice Modal is NOT open (prevents keyboard popup)
+                    if (nextInput && document.getElementById('voiceModal').style.display !== 'flex') {
+                        nextInput.focus();
+                    }
                 } else {
                     // Sample full
                     document.getElementById('voiceStatus').textContent = "현재 시료 입력 완료! '다음'이라고 말하거나 버튼을 눌러주세요.";
