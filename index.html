@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f7fb">
+    <meta name="description" content="아연도금 두께 측정값을 자재와 시료별로 입력하고 관리하는 프로그램">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <link rel="stylesheet" href="./styles.css">
+    <title>아연도금 두께 측정</title>
+</head>
+<body>
+    <a class="skip-link" href="#measurementSection">측정값 입력으로 이동</a>
+
+    <div class="app-shell">
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-mark" aria-hidden="true">Zn</div>
+                <div>
+                    <span class="eyebrow">QUALITY CONTROL</span>
+                    <h1>아연도금 두께 측정</h1>
+                    <p>자재와 시료별 측정값을 빠르고 정확하게 기록하세요.</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="icon-text-btn install" id="installBtn" type="button" hidden>
+                    <span aria-hidden="true">⬇</span> 앱 설치
+                </button>
+                <button class="icon-text-btn" id="manualBtn" type="button">
+                    <span aria-hidden="true">?</span> 사용 안내
+                </button>
+            </div>
+        </header>
+
+        <div class="status-strip">
+            <div class="save-status" id="saveStatus" data-state="saved" role="status" aria-live="polite">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span id="saveStatusText">데이터 준비 중…</span>
+            </div>
+            <div class="context-status">
+                <span aria-hidden="true">●</span>
+                <span id="contextText">자재 1 / 시료 1</span>
+            </div>
+        </div>
+
+        <main class="main-grid">
+            <section class="panel" aria-labelledby="materialHeading">
+                <div class="section-heading">
+                    <div class="section-title-wrap">
+                        <span class="section-icon" aria-hidden="true">▦</span>
+                        <h2 id="materialHeading">자재 선택</h2>
+                    </div>
+                    <span class="section-caption">이름 변경은 연필 버튼 또는 이름 더블 클릭</span>
+                </div>
+                <div class="material-selector" id="materialSelector" aria-label="자재 목록"></div>
+            </section>
+
+            <section class="panel" aria-labelledby="sampleHeading">
+                <div class="section-heading">
+                    <div class="section-title-wrap">
+                        <span class="section-icon" aria-hidden="true">#</span>
+                        <h2 id="sampleHeading">시료 선택</h2>
+                    </div>
+                    <span class="section-caption">초록 점은 20개 입력 완료를 뜻합니다</span>
+                </div>
+                <div class="sample-selector" id="sampleSelector" aria-label="시료 목록"></div>
+            </section>
+
+            <section class="measurement-card" id="measurementSection" aria-labelledby="currentSampleTitle">
+                <div class="measurement-header">
+                    <div>
+                        <h2 id="currentSampleTitle">자재 1 · 시료 1</h2>
+                        <p>측정값 단위는 μm이며 0~9,999.9 범위만 저장됩니다.</p>
+                    </div>
+                    <div class="progress-box">
+                        <div class="progress-meta">
+                            <span>입력 진행률</span>
+                            <strong class="progress-indicator" id="progressIndicator">0 / 20</strong>
+                        </div>
+                        <div
+                            class="progress-track"
+                            id="progressTrack"
+                            role="progressbar"
+                            aria-label="현재 시료 입력 진행률"
+                            aria-valuemin="0"
+                            aria-valuemax="20"
+                            aria-valuenow="0"
+                        >
+                            <div class="progress-bar" id="progressBar"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="data-grid" id="dataGrid"></div>
+
+                <div class="result-action-grid">
+                    <section class="results-section" aria-label="현재 시료 측정 결과">
+                        <div class="result-box min">
+                            <span class="result-label">최솟값</span>
+                            <div class="result-line">
+                                <strong class="result-value" id="minValue">-</strong>
+                                <span class="result-unit">μm</span>
+                            </div>
+                        </div>
+                        <div class="result-box avg">
+                            <span class="result-label">평균값</span>
+                            <div class="result-line">
+                                <strong class="result-value" id="avgValue">-</strong>
+                                <span class="result-unit">μm</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="action-panel">
+                        <button class="voice-main-btn" id="voiceBtn" type="button">
+                            <span aria-hidden="true">🎙</span> 음성으로 연속 입력
+                        </button>
+                        <button class="soft-btn danger" id="clearBtn" type="button">현재 시료 초기화</button>
+                        <button class="primary-btn" id="nextBtn" type="button">다음 시료 →</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="summary-section" aria-labelledby="summaryHeading">
+                <div class="section-heading">
+                    <div class="section-title-wrap">
+                        <span class="section-icon" aria-hidden="true">▤</span>
+                        <h2 id="summaryHeading">전체 시료 요약</h2>
+                    </div>
+                    <span class="section-caption">현재 자재의 13개 시료</span>
+                </div>
+
+                <div class="summary-table-wrap">
+                    <table class="summary-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">시료 / 입력</th>
+                                <th scope="col">최솟값 (μm)</th>
+                                <th scope="col">평균값 (μm)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summaryTableBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="export-section">
+                    <div class="export-intro">
+                        <strong>내보내기 및 백업</strong>
+                        <span>CSV는 Excel에서 열 수 있고, JSON은 전체 데이터를 복원할 때 사용합니다.</span>
+                    </div>
+                    <div class="export-actions">
+                        <button class="export-btn primary-export" id="exportCurrentBtn" type="button">
+                            현재 자재 CSV
+                        </button>
+                        <button class="export-btn" id="exportAllBtn" type="button">
+                            전체 자재 CSV
+                        </button>
+                        <button class="export-btn" id="backupBtn" type="button">
+                            JSON 백업
+                        </button>
+                        <label class="file-button" for="importFile">
+                            백업 불러오기
+                            <input id="importFile" type="file" accept=".json,application/json">
+                        </label>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            데이터는 현재 브라우저에 자동 저장됩니다. 브라우저 데이터 삭제나 기기 변경에 대비해 정기적으로 JSON 백업을 저장해주세요.
+        </footer>
+    </div>
+
+    <div
+        class="modal"
+        id="manualModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="manualTitle"
+        hidden
+    >
+        <div class="modal-card manual-card">
+            <button class="modal-close" id="closeManualBtn" type="button" aria-label="사용 안내 닫기">×</button>
+            <p class="modal-kicker">QUICK GUIDE</p>
+            <h2 class="modal-title" id="manualTitle">빠른 사용 안내</h2>
+            <p class="modal-description">자재를 선택하고 시료마다 20개의 도금 두께를 입력합니다.</p>
+
+            <div class="manual-grid">
+                <div class="manual-item">
+                    <strong>1. 자재 관리</strong>
+                    <p>자재 추가 버튼으로 새 자재를 만들고, 연필 버튼으로 이름을 변경할 수 있습니다.</p>
+                </div>
+                <div class="manual-item">
+                    <strong>2. 키패드 입력</strong>
+                    <p>값을 입력하고 Enter를 누르면 다음 칸으로 이동합니다. 음수와 비정상 값은 저장되지 않습니다.</p>
+                </div>
+                <div class="manual-item">
+                    <strong>3. 음성 입력</strong>
+                    <p>“십이 점 오”처럼 말하세요. “다시”는 마지막 입력 취소, “다음”은 완료된 다음 시료로 이동합니다.</p>
+                </div>
+                <div class="manual-item">
+                    <strong>4. 저장과 복원</strong>
+                    <p>입력 즉시 자동 저장됩니다. CSV는 표 작업용, JSON은 전체 데이터 백업과 복원용입니다.</p>
+                </div>
+            </div>
+
+            <div class="manual-note">
+                음성 인식은 HTTPS와 지원 브라우저가 필요하며 네트워크 상태에 영향을 받을 수 있습니다.
+                Chrome 또는 Edge 사용을 권장합니다.
+            </div>
+            <button class="modal-btn" id="confirmManualBtn" type="button">확인했습니다</button>
+        </div>
+    </div>
+
+    <div
+        class="modal"
+        id="voiceModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voiceTitle"
+        hidden
+    >
+        <div class="modal-card voice-modal-card" data-state="idle">
+            <div class="voice-visualization" id="voiceVisualization" aria-hidden="true">🎤</div>
+            <h2 class="voice-title" id="voiceTitle">음성 연속 입력</h2>
+            <p class="voice-status" id="voiceStatus" role="status" aria-live="polite">
+                마이크를 준비하고 있습니다…
+            </p>
+            <div class="voice-result" id="voiceResult" data-final="false" aria-live="polite">-</div>
+            <div class="voice-command-hint" aria-label="사용 가능한 음성 명령">
+                <span>“다시” 마지막 입력 취소</span>
+                <span>“다음” 다음 시료</span>
+                <span>“종료” 닫기</span>
+            </div>
+            <div class="voice-actions">
+                <button id="undoVoiceBtn" type="button">↶ 마지막 취소</button>
+                <button id="nextVoiceBtn" type="button">다음 시료</button>
+                <button class="stop" id="stopVoiceBtn" type="button">입력 종료</button>
+                <button class="restart" id="restartVoiceBtn" type="button" hidden>음성 인식 다시 시작</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="./app.js" defer></script>
+</body>
+</html>
