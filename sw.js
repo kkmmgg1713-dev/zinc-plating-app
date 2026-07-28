@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zinc-plating-v3-20260728';
+const CACHE_NAME = 'zinc-plating-v3-20260728-photo-illustration-icon';
 const APP_SHELL = [
     './',
     './index.html',

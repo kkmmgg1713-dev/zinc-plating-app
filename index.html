@@ -6,7 +6,8 @@
     <meta name="theme-color" content="#f4f7fb">
     <meta name="description" content="아연도금 두께 측정값을 자재와 시료별로 입력하고 관리하는 프로그램">
     <link rel="manifest" href="./manifest.json">
-    <link rel="apple-touch-icon" href="./icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
     <link rel="stylesheet" href="./styles.css">
     <title>아연도금 두께 측정</title>
 </head>
@@ -114,7 +115,7 @@
 
                     <div class="action-panel">
                         <button class="voice-main-btn" id="voiceBtn" type="button">
-                            <span aria-hidden="true">🎙</span> 음성으로 연속 입력
+                            <span aria-hidden="true">🎙</span> 음성 입력
                         </button>
                         <button class="soft-btn danger" id="clearBtn" type="button">현재 시료 초기화</button>
                         <button class="primary-btn" id="nextBtn" type="button">다음 시료 →</button>
@@ -224,10 +225,27 @@
     >
         <div class="modal-card voice-modal-card" data-state="idle">
             <div class="voice-visualization" id="voiceVisualization" aria-hidden="true">🎤</div>
-            <h2 class="voice-title" id="voiceTitle">음성 연속 입력</h2>
+            <h2 class="voice-title" id="voiceTitle">음성 입력</h2>
             <p class="voice-status" id="voiceStatus" role="status" aria-live="polite">
                 마이크를 준비하고 있습니다…
             </p>
+            <div class="voice-progress">
+                <div class="voice-progress-meta">
+                    <span>입력 진행률</span>
+                    <strong id="voiceProgressIndicator">0 / 20</strong>
+                </div>
+                <div
+                    class="voice-progress-track"
+                    id="voiceProgressTrack"
+                    role="progressbar"
+                    aria-label="음성 입력 진행률"
+                    aria-valuemin="0"
+                    aria-valuemax="20"
+                    aria-valuenow="0"
+                >
+                    <div class="voice-progress-bar" id="voiceProgressBar"></div>
+                </div>
+            </div>
             <div class="voice-result" id="voiceResult" data-final="false" aria-live="polite">-</div>
             <div class="voice-command-hint" aria-label="사용 가능한 음성 명령">
                 <span>“다시” 마지막 입력 취소</span>
@@ -239,6 +257,33 @@
                 <button id="nextVoiceBtn" type="button">다음 시료</button>
                 <button class="stop" id="stopVoiceBtn" type="button">입력 종료</button>
                 <button class="restart" id="restartVoiceBtn" type="button" hidden>음성 인식 다시 시작</button>
+            </div>
+        </div>
+    </div>
+
+    <div
+        class="modal"
+        id="voiceCompleteModal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="voiceCompleteTitle"
+        aria-describedby="voiceCompleteMessage"
+        hidden
+    >
+        <div class="modal-card voice-complete-card">
+            <div class="voice-complete-icon" aria-hidden="true">✓</div>
+            <p class="modal-kicker">VOICE INPUT COMPLETE</p>
+            <h2 class="modal-title" id="voiceCompleteTitle">20개 입력 완료</h2>
+            <p class="modal-description" id="voiceCompleteMessage">
+                현재 시료의 측정값 20개를 모두 입력했습니다.
+            </p>
+            <div class="voice-complete-actions">
+                <button class="modal-btn secondary" id="cancelVoiceCompleteBtn" type="button">
+                    아니요 · 음성 입력 종료
+                </button>
+                <button class="modal-btn" id="confirmVoiceCompleteBtn" type="button">
+                    확인 · 다음 시료
+                </button>
             </div>
         </div>
     </div>

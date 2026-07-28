@@ -1041,10 +1041,49 @@ input:focus-visible,
     line-height: 1.55;
 }
 
+.voice-progress {
+    margin: 12px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid #ddd6fe;
+    border-radius: 15px;
+    background: #faf9ff;
+}
+
+.voice-progress-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 9px;
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 750;
+}
+
+.voice-progress-meta strong {
+    color: var(--secondary);
+    font-size: 0.86rem;
+}
+
+.voice-progress-track {
+    height: 9px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: #e9e5f8;
+}
+
+.voice-progress-bar {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #7c3aed, #5b5ee8);
+    transition: width 0.24s ease;
+}
+
 .voice-result {
     display: grid;
     min-height: 70px;
-    margin: 14px 0 20px;
+    margin: 0 0 20px;
     place-items: center;
     border: 1px solid var(--border);
     border-radius: 17px;
@@ -1111,6 +1150,47 @@ input:focus-visible,
 
 .modal[data-state="complete"] .voice-visualization {
     background: var(--success-soft);
+}
+
+.voice-complete-card {
+    max-width: 420px;
+    text-align: center;
+}
+
+.voice-complete-card .modal-title {
+    padding-right: 0;
+}
+
+.voice-complete-icon {
+    display: grid;
+    width: 78px;
+    height: 78px;
+    margin: 0 auto 20px;
+    place-items: center;
+    border-radius: 26px;
+    background: var(--success-soft);
+    color: var(--success);
+    box-shadow: 0 14px 30px rgba(22, 163, 74, 0.15);
+    font-size: 2rem;
+    font-weight: 900;
+}
+
+.voice-complete-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+}
+
+.voice-complete-actions .modal-btn {
+    min-height: 48px;
+    padding-inline: 12px;
+    font-size: 0.8rem;
+}
+
+.voice-complete-actions .modal-btn.secondary {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text-soft);
 }
 
 .toast {
@@ -1310,6 +1390,10 @@ input:focus-visible,
     }
 
     .manual-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .voice-complete-actions {
         grid-template-columns: 1fr;
     }
 
