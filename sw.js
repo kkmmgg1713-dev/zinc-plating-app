@@ -1,5 +1,5 @@
 // 배포할 때 이 값과 index.html의 ?v= 값을 함께 올립니다.
-const ASSET_VERSION = '9';
+const ASSET_VERSION = '13';
 const CACHE_NAME = `zinc-plating-v${ASSET_VERSION}-20261103-voice-fixes`;
 const APP_SHELL = [
     './',

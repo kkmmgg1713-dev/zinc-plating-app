@@ -5,6 +5,7 @@
     const MEASUREMENTS_PER_SAMPLE = 20;
     const MIN_MEASUREMENT = 0;
     const MAX_MEASUREMENT = 9999.9;
+    const MAX_DECIMALS = 2;
     const STORAGE_KEY = 'zincPlatingDataV3';
     const LEGACY_STORAGE_KEY = 'zincPlatingDataV2';
     const DATA_VERSION = 3;
@@ -284,10 +285,44 @@
         }, 0) + 1;
     }
 
-    function formatMeasurement(value) {
+    function countDecimals(value) {
+        const text = String(value);
+        const dotIndex = text.indexOf('.');
+        return dotIndex < 0 || /e/i.test(text) ? 0 : text.length - dotIndex - 1;
+    }
+
+    // 한 자재 안에서 소수 자릿수가 가장 많은 측정값에 맞춰 표시합니다.
+    function getMaterialDecimals(material = getCurrentMaterial()) {
+        const decimals = material.samples.reduce(
+            (max, sample) => sample.measurements.reduce(
+                (sampleMax, value) => (value === null ? sampleMax : Math.max(sampleMax, countDecimals(value))),
+                max
+            ),
+            0
+        );
+        // 이전 버전에서 저장된 3자리 이상 값도 화면에는 2자리까지만 보입니다.
+        return Math.min(decimals, MAX_DECIMALS);
+    }
+
+    function getAverageDecimals(decimals) {
+        return Math.max(decimals, 1);
+    }
+
+    function formatMeasurement(value, decimals = getMaterialDecimals()) {
         return typeof value === 'number' && Number.isFinite(value)
-            ? value.toFixed(1)
+            ? value.toFixed(decimals)
             : '-';
+    }
+
+    function refreshMeasurementInputs() {
+        const decimals = getMaterialDecimals();
+        getCurrentSample().measurements.forEach((value, index) => {
+            const input = document.getElementById(`measurement-${index}`);
+            // 입력 중인 칸은 커서가 튀지 않도록 칸을 벗어날 때 맞춥니다.
+            if (input && value !== null && input !== document.activeElement) {
+                input.value = value.toFixed(decimals);
+            }
+        });
     }
 
     function showToast(message, type = 'info') {
@@ -479,6 +514,7 @@
     function renderDataGrid() {
         dom.dataGrid.replaceChildren();
         const sample = getCurrentSample();
+        const decimals = getMaterialDecimals();
 
         sample.measurements.forEach((measurement, index) => {
             const wrapper = document.createElement('div');
@@ -495,7 +531,7 @@
             input.inputMode = 'decimal';
             input.min = String(MIN_MEASUREMENT);
             input.max = String(MAX_MEASUREMENT);
-            input.step = '0.1';
+            input.step = 'any';
             input.autocomplete = 'off';
             input.setAttribute(
                 'aria-label',
@@ -503,12 +539,13 @@
             );
 
             if (measurement !== null) {
-                input.value = String(measurement);
+                input.value = measurement.toFixed(decimals);
                 input.classList.add('filled');
             }
 
             input.addEventListener('input', event => handleInput(index, event.target.value));
             input.addEventListener('change', event => finalizeInput(index, event.target));
+            input.addEventListener('blur', refreshMeasurementInputs);
             input.addEventListener('keydown', event => handleKeydown(index, event));
             input.addEventListener('focus', () => highlightCurrentInput(index));
 
@@ -522,8 +559,10 @@
     function renderResults() {
         const sample = getCurrentSample();
         calculateSample(sample);
-        dom.minValue.textContent = formatMeasurement(sample.min);
-        dom.avgValue.textContent = formatMeasurement(sample.avg);
+        const decimals = getMaterialDecimals();
+        dom.minValue.textContent = formatMeasurement(sample.min, decimals);
+        dom.avgValue.textContent = formatMeasurement(sample.avg, getAverageDecimals(decimals));
+        refreshMeasurementInputs();
     }
 
     function renderProgress() {
@@ -546,6 +585,7 @@
 
     function renderSummaryTable() {
         dom.summaryTableBody.replaceChildren();
+        const decimals = getMaterialDecimals();
 
         getCurrentMaterial().samples.forEach((sample, index) => {
             calculateSample(sample);
@@ -563,10 +603,10 @@
             countCell.classList.toggle('completed-count', filledCount === MEASUREMENTS_PER_SAMPLE);
 
             const minCell = document.createElement('td');
-            minCell.textContent = formatMeasurement(sample.min);
+            minCell.textContent = formatMeasurement(sample.min, decimals);
 
             const avgCell = document.createElement('td');
-            avgCell.textContent = formatMeasurement(sample.avg);
+            avgCell.textContent = formatMeasurement(sample.avg, getAverageDecimals(decimals));
 
             row.append(sampleCell, countCell, minCell, avgCell);
             dom.summaryTableBody.appendChild(row);
@@ -792,7 +832,15 @@
 
     function handleInput(index, rawValue) {
         const input = document.getElementById(`measurement-${index}`);
-        const result = validateMeasurement(rawValue);
+        const trimmedValue = String(rawValue).replace(
+            new RegExp(`^(\\s*\\d*\\.\\d{${MAX_DECIMALS}})\\d+`),
+            '$1'
+        );
+        if (trimmedValue !== rawValue) {
+            input.value = trimmedValue;
+            showToast(`소수점은 ${MAX_DECIMALS}자리까지 입력할 수 있습니다.`, 'info');
+        }
+        const result = validateMeasurement(trimmedValue);
 
         input.classList.toggle('invalid', !result.valid);
         input.classList.toggle('filled', result.valid && result.value !== null);
@@ -809,6 +857,9 @@
 
     function finalizeInput(index, input) {
         const result = validateMeasurement(input.value);
+        if (result.valid && result.value !== null) {
+            input.value = result.value.toFixed(getMaterialDecimals());
+        }
         if (!result.valid) {
             showToast(result.message, 'error');
             input.value = '';
@@ -944,13 +995,21 @@
     }
 
     function materialRows(material, includeMaterial = false) {
+        const decimals = getMaterialDecimals(material);
+        const formatCell = (value, places) => (value === null ? '' : value.toFixed(places));
+
         return material.samples.map((sample, index) => {
             calculateSample(sample);
             const row = [];
             if (includeMaterial) {
                 row.push(material.name);
             }
-            row.push(index + 1, ...sample.measurements, sample.min, sample.avg);
+            row.push(
+                index + 1,
+                ...sample.measurements.map(value => formatCell(value, decimals)),
+                formatCell(sample.min, decimals),
+                formatCell(sample.avg, getAverageDecimals(decimals))
+            );
             return row.map(escapeCsvCell).join(',');
         });
     }
@@ -1191,6 +1250,11 @@
         if (tokens[index]?.type === 'arabic' && !tokens[index].text.includes('.')) {
             decimals = tokens[index].text;
             index += 1;
+            // "86 점 4 5"는 "팔십육 점 사 오"와 같이 86.45로 읽습니다.
+            while (tokens[index]?.type === 'arabic' && /^\d$/.test(tokens[index].text)) {
+                decimals += tokens[index].text;
+                index += 1;
+            }
         } else {
             // 뒤에 단위나 "점"이 붙은 숫자는 다음 값의 시작입니다.
             while (
@@ -1815,7 +1879,7 @@
         });
 
         const input = document.getElementById(`measurement-${targetIndex}`);
-        input.value = String(validation.value);
+        input.value = validation.value.toFixed(getMaterialDecimals());
         input.classList.remove('invalid');
         input.classList.add('filled');
         input.setAttribute('aria-invalid', 'false');
@@ -1868,7 +1932,7 @@
         const sample = getCurrentSample();
         sample.measurements[entry.measurementIndex] = entry.previousValue;
         const input = document.getElementById(`measurement-${entry.measurementIndex}`);
-        input.value = entry.previousValue === null ? '' : String(entry.previousValue);
+        input.value = entry.previousValue === null ? '' : entry.previousValue.toFixed(getMaterialDecimals());
         input.classList.toggle('filled', entry.previousValue !== null);
 
         calculateSample(sample);
@@ -1919,6 +1983,14 @@
         if (outOfRange !== undefined) {
             rejectVoiceInput(
                 `${outOfRange} μm는 허용 범위(${voiceRange.min}~${voiceRange.max})를 벗어나 저장하지 않았습니다. 다시 말씀해주세요.`
+            );
+            return;
+        }
+
+        const tooPrecise = numbers.find(number => countDecimals(number) > MAX_DECIMALS);
+        if (tooPrecise !== undefined) {
+            rejectVoiceInput(
+                `${tooPrecise}은 소수점 ${MAX_DECIMALS}자리를 넘어 저장하지 않았습니다. 다시 말씀해주세요.`
             );
             return;
         }
