@@ -8,7 +8,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
     <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
-    <link rel="stylesheet" href="./styles.css?v=6">
+    <link rel="stylesheet" href="./styles.css?v=9">
     <title>아연도금 두께 측정</title>
 </head>
 <body>
@@ -28,7 +28,20 @@
 
         <main class="main-grid">
             <div class="selector-row">
-                <select class="selector material-select" id="materialSelector" aria-label="자재 선택"></select>
+                <div class="material-picker" id="materialPicker">
+                    <button
+                        class="selector material-trigger"
+                        id="materialTrigger"
+                        type="button"
+                        aria-label="자재 선택"
+                        aria-expanded="false"
+                        aria-controls="materialPanel"
+                    ></button>
+                    <div class="material-panel" id="materialPanel" hidden>
+                        <ul class="material-list" id="materialList"></ul>
+                        <button class="material-add" id="addMaterialBtn" type="button">+ 자재 추가</button>
+                    </div>
+                </div>
                 <select class="selector sample-select" id="sampleSelector" aria-label="시료 선택"></select>
             </div>
 
@@ -106,15 +119,6 @@
             <h2 class="modal-title" id="menuTitle">메뉴</h2>
 
             <div class="menu-group">
-                <strong>자재 관리</strong>
-                <div class="menu-actions">
-                    <button class="menu-item" id="addMaterialBtn" type="button">자재 추가</button>
-                    <button class="menu-item" id="renameMaterialBtn" type="button">이름 변경</button>
-                    <button class="menu-item danger" id="deleteMaterialBtn" type="button">현재 자재 삭제</button>
-                </div>
-            </div>
-
-            <div class="menu-group">
                 <strong>음성 입력 허용 범위 (μm)</strong>
                 <span>범위를 벗어난 음성 값은 저장하지 않고 다시 말하도록 안내합니다. 키패드 입력에는 적용되지 않습니다.</span>
                 <div class="menu-actions">
@@ -170,7 +174,7 @@
             <div class="manual-grid">
                 <div class="manual-item">
                     <strong>1. 자재 관리</strong>
-                    <p>오른쪽 위 메뉴(☰)에서 자재를 추가하거나 현재 자재의 이름 변경과 삭제를 할 수 있습니다.</p>
+                    <p>자재 목록을 열어 자재를 추가합니다. 연필 아이콘을 누르면 이름을 바꾸거나 휴지통 아이콘으로 삭제할 수 있습니다.</p>
                 </div>
                 <div class="manual-item">
                     <strong>2. 키패드 입력</strong>
@@ -267,8 +271,32 @@
         </div>
     </div>
 
+    <div
+        class="modal"
+        id="deleteMaterialModal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="deleteMaterialTitle"
+        aria-describedby="deleteMaterialMessage"
+        hidden
+    >
+        <div class="modal-card delete-material-card">
+            <h2 class="modal-title" id="deleteMaterialTitle">자재를 삭제할까요?</h2>
+            <p class="modal-description" id="deleteMaterialMessage"></p>
+            <div class="delete-material-actions">
+                <button class="modal-btn secondary" id="cancelDeleteMaterialBtn" type="button">취소</button>
+                <button class="modal-btn danger" id="confirmDeleteMaterialBtn" type="button">삭제</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="undo-bar" id="undoDeleteBar" role="status" aria-live="polite" hidden>
+        <span class="undo-bar-message" id="undoDeleteMessage"></span>
+        <button class="undo-bar-btn" id="undoDeleteBtn" type="button">되돌리기</button>
+    </div>
+
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-    <script src="./app.js?v=6" defer></script>
+    <script src="./app.js?v=9" defer></script>
 </body>
 </html>

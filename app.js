@@ -14,6 +14,7 @@
     const HEALTHY_SESSION_MS = 1000;
     const QUICK_RESTART_MS = 150;
     const DUPLICATE_FINAL_MS = 400;
+    const UNDO_DELETE_MS = 10000;
 
     let materials = [];
     let currentMaterial = 0;
@@ -23,6 +24,10 @@
     let previousFocus = null;
     let activeModal = null;
     let toastTimer = null;
+    let editingMaterialIndex = null;
+    let pendingDeleteMaterialIndex = null;
+    let pendingUndoDelete = null;
+    let undoDeleteTimer = null;
 
     let recognition = null;
     let recognitionToken = 0;
@@ -302,17 +307,155 @@
         }, 3200);
     }
 
-    function renderMaterialSelector() {
-        dom.materialSelector.replaceChildren();
+    function createMaterialIconButton(className, label, onClick) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `material-row-icon ${className}`;
+        button.setAttribute('aria-label', label);
+        button.addEventListener('click', onClick);
+        return button;
+    }
 
-        materials.forEach((material, index) => {
-            const option = document.createElement('option');
-            option.value = String(index);
-            option.textContent = material.name;
-            dom.materialSelector.appendChild(option);
+    function createMaterialRow(material, index) {
+        const row = document.createElement('li');
+        row.className = 'material-row';
+
+        const selectButton = document.createElement('button');
+        selectButton.type = 'button';
+        selectButton.className = 'material-row-select';
+        selectButton.textContent = material.name;
+        selectButton.addEventListener('click', () => {
+            closeMaterialPanel();
+            selectMaterial(index);
         });
 
-        dom.materialSelector.value = String(currentMaterial);
+        if (index === currentMaterial) {
+            row.classList.add('current');
+            selectButton.setAttribute('aria-current', 'true');
+        }
+
+        const editButton = createMaterialIconButton(
+            'edit',
+            `${material.name} 이름 변경`,
+            () => startMaterialEdit(index)
+        );
+        const pencil = document.createElement('span');
+        pencil.className = 'icon-pencil';
+        pencil.setAttribute('aria-hidden', 'true');
+        editButton.appendChild(pencil);
+
+        row.append(selectButton, editButton);
+        return row;
+    }
+
+    function createMaterialEditRow(material, index) {
+        const row = document.createElement('li');
+        row.className = 'material-row editing';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'material-name-input';
+        input.value = material.name;
+        input.maxLength = 50;
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', '자재 이름');
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                saveMaterialName(index, input.value);
+            }
+        });
+
+        const saveButton = createMaterialIconButton(
+            'save',
+            '이름 저장',
+            () => saveMaterialName(index, input.value)
+        );
+        saveButton.textContent = '✓';
+
+        const cancelButton = createMaterialIconButton('cancel', '이름 변경 취소', cancelMaterialEdit);
+        cancelButton.textContent = '×';
+
+        const deleteButton = createMaterialIconButton(
+            'delete',
+            `${material.name} 삭제`,
+            () => openDeleteMaterialModal(index)
+        );
+        const trash = document.createElement('span');
+        trash.className = 'icon-trash';
+        trash.setAttribute('aria-hidden', 'true');
+        deleteButton.appendChild(trash);
+
+        row.append(input, saveButton, cancelButton, deleteButton);
+        return row;
+    }
+
+    function renderMaterialSelector() {
+        dom.materialTrigger.textContent = getCurrentMaterial().name;
+        dom.materialList.replaceChildren(
+            ...materials.map((material, index) => (
+                index === editingMaterialIndex
+                    ? createMaterialEditRow(material, index)
+                    : createMaterialRow(material, index)
+            ))
+        );
+    }
+
+    function openMaterialPanel() {
+        editingMaterialIndex = null;
+        renderMaterialSelector();
+        dom.materialPanel.hidden = false;
+        dom.materialTrigger.setAttribute('aria-expanded', 'true');
+        dom.materialList.querySelector('.current')?.scrollIntoView({ block: 'nearest' });
+    }
+
+    function closeMaterialPanel() {
+        const wasEditing = editingMaterialIndex !== null;
+        editingMaterialIndex = null;
+        dom.materialPanel.hidden = true;
+        dom.materialTrigger.setAttribute('aria-expanded', 'false');
+        if (wasEditing) {
+            renderMaterialSelector();
+        }
+    }
+
+    function startMaterialEdit(index) {
+        editingMaterialIndex = index;
+        renderMaterialSelector();
+        const input = dom.materialList.querySelector('.material-name-input');
+        input.focus();
+        input.select();
+        input.scrollIntoView({ block: 'nearest' });
+    }
+
+    function cancelMaterialEdit() {
+        editingMaterialIndex = null;
+        renderMaterialSelector();
+    }
+
+    function saveMaterialName(index, enteredName) {
+        const normalizedName = enteredName.replace(/\s+/g, ' ').trim().slice(0, 50);
+        if (!normalizedName) {
+            showToast('자재 이름을 한 글자 이상 입력해주세요.', 'error');
+            return;
+        }
+
+        materials[index].name = normalizedName;
+        editingMaterialIndex = null;
+        renderMaterialSelector();
+        saveData('자재 이름 저장됨');
+    }
+
+    function handleMaterialPanelKeydown(event) {
+        if (event.key !== 'Escape' || dom.materialPanel.hidden) {
+            return;
+        }
+        if (editingMaterialIndex !== null) {
+            cancelMaterialEdit();
+        } else {
+            closeMaterialPanel();
+            dom.materialTrigger.focus();
+        }
     }
 
     function renderSampleSelector() {
@@ -456,7 +599,7 @@
     }
 
     function selectMaterial(index) {
-        if (!materials[index]) {
+        if (!materials[index] || index === currentMaterial) {
             return;
         }
         currentMaterial = index;
@@ -467,55 +610,128 @@
         saveData('선택 위치 저장됨');
     }
 
-    function renameMaterial(index) {
+    function openDeleteMaterialModal(index) {
         const material = materials[index];
         if (!material) {
             return;
         }
 
-        const enteredName = window.prompt('자재 이름을 입력하세요. (최대 50자)', material.name);
-        if (enteredName === null) {
-            return;
-        }
+        const measurementCount = material.samples.reduce(
+            (count, sample) => count + sample.measurements.filter(value => value !== null).length,
+            0
+        );
+        const undoText = `삭제 후 ${UNDO_DELETE_MS / 1000}초 안에만 되돌릴 수 있습니다.`;
+        const dataText = measurementCount > 0
+            ? `입력된 측정값 ${measurementCount}개가 함께 삭제됩니다. ${undoText}`
+            : `입력된 측정값은 없습니다. ${undoText}`;
 
-        const normalizedName = enteredName.replace(/\s+/g, ' ').trim().slice(0, 50);
-        if (!normalizedName) {
-            showToast('자재 이름을 한 글자 이상 입력해주세요.', 'error');
-            return;
-        }
+        pendingDeleteMaterialIndex = index;
+        dom.deleteMaterialTitle.textContent = `"${material.name}" 자재를 삭제할까요?`;
+        dom.deleteMaterialMessage.textContent = materials.length === 1
+            ? `자재가 1개뿐이라 삭제 후 빈 "자재 1"로 초기화됩니다. ${dataText}`
+            : dataText;
 
-        material.name = normalizedName;
-        renderMaterialSelector();
-        updateCurrentTitle();
-        saveData('자재 이름 저장됨');
+        closeMaterialPanel();
+        dom.materialTrigger.focus();
+        openModal(dom.deleteMaterialModal, dom.cancelDeleteMaterialBtn);
+    }
+
+    function closeDeleteMaterialModal() {
+        pendingDeleteMaterialIndex = null;
+        closeModal(dom.deleteMaterialModal);
+    }
+
+    function confirmDeleteMaterial() {
+        const index = pendingDeleteMaterialIndex;
+        closeDeleteMaterialModal();
+        if (index !== null) {
+            deleteMaterial(index);
+        }
     }
 
     function deleteMaterial(index) {
         const material = materials[index];
-        if (!material || !window.confirm(`"${material.name}" 자재와 측정 데이터를 삭제하시겠습니까?`)) {
+        if (!material) {
             return;
         }
 
+        const undoEntry = {
+            material,
+            index,
+            selectedId: getCurrentMaterial().id,
+            selectedSample: currentSample,
+            replacementId: null
+        };
+
         if (materials.length === 1) {
             materials = [createMaterialData(1)];
+            undoEntry.replacementId = materials[0].id;
             currentMaterial = 0;
             currentSample = 0;
-            showToast('마지막 자재를 비우고 새 자재로 초기화했습니다.', 'info');
         } else {
             materials.splice(index, 1);
             if (index < currentMaterial) {
                 currentMaterial -= 1;
             } else if (index === currentMaterial) {
                 currentMaterial = Math.min(index, materials.length - 1);
+                currentSample = 0;
             }
-            currentSample = 0;
-            showToast('자재가 삭제되었습니다.', 'success');
         }
 
         voiceCursorIndex = null;
         voiceHistory = [];
         renderAll();
         saveData('삭제 내용 저장됨');
+        showUndoDelete(undoEntry);
+    }
+
+    function showUndoDelete(entry) {
+        window.clearTimeout(undoDeleteTimer);
+        pendingUndoDelete = entry;
+        dom.undoDeleteMessage.textContent = `"${entry.material.name}" 자재를 삭제했습니다.`;
+        dom.undoDeleteBar.hidden = false;
+        document.body.classList.add('undo-visible');
+        undoDeleteTimer = window.setTimeout(dismissUndoDelete, UNDO_DELETE_MS);
+    }
+
+    function dismissUndoDelete() {
+        window.clearTimeout(undoDeleteTimer);
+        pendingUndoDelete = null;
+        dom.undoDeleteBar.hidden = true;
+        document.body.classList.remove('undo-visible');
+    }
+
+    function undoDeleteMaterial() {
+        const entry = pendingUndoDelete;
+        dismissUndoDelete();
+        if (!entry) {
+            return;
+        }
+
+        // 자동으로 만든 빈 자재는 원래 자재가 돌아오면 필요 없습니다.
+        // 그사이 값을 입력하거나 이름을 바꿨다면 지우지 않습니다.
+        const replacementIndex = materials.findIndex(item => item.id === entry.replacementId);
+        const replacement = materials[replacementIndex];
+        if (
+            replacement &&
+            replacement.name === `자재 ${replacement.materialNumber}` &&
+            replacement.samples.every(sample => sample.measurements.every(value => value === null))
+        ) {
+            materials.splice(replacementIndex, 1);
+        }
+
+        materials.splice(Math.min(entry.index, materials.length), 0, entry.material);
+        currentMaterial = materials.findIndex(item => item.id === entry.selectedId);
+        if (currentMaterial < 0) {
+            currentMaterial = materials.indexOf(entry.material);
+        }
+        currentSample = entry.selectedSample;
+
+        voiceCursorIndex = null;
+        voiceHistory = [];
+        renderAll();
+        saveData('삭제 취소 저장됨');
+        showToast(`"${entry.material.name}" 자재를 되돌렸습니다.`, 'success');
     }
 
     function selectSample(index) {
@@ -802,6 +1018,7 @@
             }
 
             stopVoiceInput();
+            dismissUndoDelete();
             materials = normalized.materials;
             currentMaterial = normalized.currentMaterial;
             currentSample = normalized.currentSample;
@@ -1435,6 +1652,7 @@
         }
 
         prepareAudioContext();
+        dismissUndoDelete();
         voiceHistory = [];
         voiceCursorIndex = findNextEmptyIndex(0);
         renderProgress();
@@ -1784,6 +2002,8 @@
                 closeVoiceComplete();
             } else if (activeModal === dom.menuModal) {
                 closeMenu();
+            } else if (activeModal === dom.deleteMaterialModal) {
+                closeDeleteMaterialModal();
             } else {
                 closeManual();
             }
@@ -1856,7 +2076,23 @@
     }
 
     function bindEvents() {
-        dom.materialSelector.addEventListener('change', event => selectMaterial(Number(event.target.value)));
+        dom.materialTrigger.addEventListener('click', () => {
+            if (dom.materialPanel.hidden) {
+                openMaterialPanel();
+            } else {
+                closeMaterialPanel();
+            }
+        });
+        dom.addMaterialBtn.addEventListener('click', () => {
+            closeMaterialPanel();
+            addMaterial();
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!dom.materialPanel.hidden && !event.composedPath().includes(dom.materialPicker)) {
+                closeMaterialPanel();
+            }
+        });
+        document.addEventListener('keydown', handleMaterialPanelKeydown);
         dom.sampleSelector.addEventListener('change', event => selectSample(Number(event.target.value)));
 
         dom.menuBtn.addEventListener('click', openMenu);
@@ -1866,9 +2102,14 @@
                 closeMenu();
             }
         });
-        bindMenuAction(dom.addMaterialBtn, addMaterial);
-        bindMenuAction(dom.renameMaterialBtn, () => renameMaterial(currentMaterial));
-        bindMenuAction(dom.deleteMaterialBtn, () => deleteMaterial(currentMaterial));
+        dom.cancelDeleteMaterialBtn.addEventListener('click', closeDeleteMaterialModal);
+        dom.confirmDeleteMaterialBtn.addEventListener('click', confirmDeleteMaterial);
+        dom.undoDeleteBtn.addEventListener('click', undoDeleteMaterial);
+        dom.deleteMaterialModal.addEventListener('click', event => {
+            if (event.target === dom.deleteMaterialModal) {
+                closeDeleteMaterialModal();
+            }
+        });
         bindMenuAction(dom.manualBtn, openManual);
         bindMenuAction(dom.exportCurrentBtn, exportCurrentMaterial);
         bindMenuAction(dom.exportAllBtn, exportAllMaterials);
@@ -1910,7 +2151,10 @@
 
     function cacheDom() {
         dom = {
-            materialSelector: document.getElementById('materialSelector'),
+            materialPicker: document.getElementById('materialPicker'),
+            materialTrigger: document.getElementById('materialTrigger'),
+            materialPanel: document.getElementById('materialPanel'),
+            materialList: document.getElementById('materialList'),
             sampleSelector: document.getElementById('sampleSelector'),
             dataGrid: document.getElementById('dataGrid'),
             currentSampleTitle: document.getElementById('currentSampleTitle'),
@@ -1929,8 +2173,14 @@
             voiceRangeMin: document.getElementById('voiceRangeMin'),
             voiceRangeMax: document.getElementById('voiceRangeMax'),
             addMaterialBtn: document.getElementById('addMaterialBtn'),
-            renameMaterialBtn: document.getElementById('renameMaterialBtn'),
-            deleteMaterialBtn: document.getElementById('deleteMaterialBtn'),
+            deleteMaterialModal: document.getElementById('deleteMaterialModal'),
+            deleteMaterialTitle: document.getElementById('deleteMaterialTitle'),
+            deleteMaterialMessage: document.getElementById('deleteMaterialMessage'),
+            cancelDeleteMaterialBtn: document.getElementById('cancelDeleteMaterialBtn'),
+            confirmDeleteMaterialBtn: document.getElementById('confirmDeleteMaterialBtn'),
+            undoDeleteBar: document.getElementById('undoDeleteBar'),
+            undoDeleteMessage: document.getElementById('undoDeleteMessage'),
+            undoDeleteBtn: document.getElementById('undoDeleteBtn'),
             manualBtn: document.getElementById('manualBtn'),
             installBtn: document.getElementById('installBtn'),
             manualModal: document.getElementById('manualModal'),
