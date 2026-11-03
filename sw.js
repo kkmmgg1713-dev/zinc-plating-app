@@ -1,9 +1,11 @@
-const CACHE_NAME = 'zinc-plating-v3-20260728-photo-illustration-icon';
+// 배포할 때 이 값과 index.html의 ?v= 값을 함께 올립니다.
+const ASSET_VERSION = '6';
+const CACHE_NAME = `zinc-plating-v${ASSET_VERSION}-20261103-voice-fixes`;
 const APP_SHELL = [
     './',
     './index.html',
-    './styles.css',
-    './app.js',
+    `./styles.css?v=${ASSET_VERSION}`,
+    `./app.js?v=${ASSET_VERSION}`,
     './manifest.json',
     './icon-192.png',
     './icon-512.png'
@@ -11,7 +13,9 @@ const APP_SHELL = [
 
 self.addEventListener('install', event => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL))
+        caches.open(CACHE_NAME).then(cache =>
+            cache.addAll(APP_SHELL.map(url => new Request(url, { cache: 'reload' })))
+        )
     );
     self.skipWaiting();
 });
@@ -43,18 +47,15 @@ self.addEventListener('fetch', event => {
 
     if (request.mode === 'navigate') {
         event.respondWith(
-            fetch(request)
+            fetch(request.url, { cache: 'no-cache' })
                 .then(response => {
-                    const copy = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+                    if (response.ok) {
+                        const copy = response.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+                    }
                     return response;
                 })
-                .catch(async () => {
-                    return (
-                        await caches.match(request) ||
-                        await caches.match('./index.html')
-                    );
-                })
+                .catch(() => caches.match('./index.html'))
         );
         return;
     }

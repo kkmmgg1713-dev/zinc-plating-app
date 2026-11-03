@@ -9,6 +9,11 @@
     const LEGACY_STORAGE_KEY = 'zincPlatingDataV2';
     const DATA_VERSION = 3;
     const MAX_VOICE_RETRIES = 5;
+    const VOICE_RANGE_KEY = 'zincPlatingVoiceRangeV1';
+    const DEFAULT_VOICE_RANGE = { min: 0, max: 500 };
+    const HEALTHY_SESSION_MS = 1000;
+    const QUICK_RESTART_MS = 150;
+    const DUPLICATE_FINAL_MS = 400;
 
     let materials = [];
     let currentMaterial = 0;
@@ -28,6 +33,8 @@
     let voiceCursorIndex = null;
     let voiceHistory = [];
     let audioContext = null;
+    let wakeLock = null;
+    let voiceRange = { ...DEFAULT_VOICE_RANGE };
 
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -299,46 +306,13 @@
         dom.materialSelector.replaceChildren();
 
         materials.forEach((material, index) => {
-            const wrapper = document.createElement('div');
-            wrapper.className = `material-tab${index === currentMaterial ? ' active' : ''}`;
-
-            const selectButton = document.createElement('button');
-            selectButton.type = 'button';
-            selectButton.className = 'material-name-btn';
-            selectButton.textContent = material.name;
-            selectButton.setAttribute('aria-pressed', String(index === currentMaterial));
-            selectButton.addEventListener('click', () => selectMaterial(index));
-            selectButton.addEventListener('dblclick', event => {
-                event.preventDefault();
-                renameMaterial(index);
-            });
-
-            const editButton = document.createElement('button');
-            editButton.type = 'button';
-            editButton.className = 'tab-icon-btn';
-            editButton.textContent = '✎';
-            editButton.setAttribute('aria-label', `${material.name} 이름 변경`);
-            editButton.title = '이름 변경';
-            editButton.addEventListener('click', () => renameMaterial(index));
-
-            const deleteButton = document.createElement('button');
-            deleteButton.type = 'button';
-            deleteButton.className = 'tab-icon-btn danger';
-            deleteButton.textContent = '×';
-            deleteButton.setAttribute('aria-label', `${material.name} 삭제`);
-            deleteButton.title = '자재 삭제';
-            deleteButton.addEventListener('click', () => deleteMaterial(index));
-
-            wrapper.append(selectButton, editButton, deleteButton);
-            dom.materialSelector.appendChild(wrapper);
+            const option = document.createElement('option');
+            option.value = String(index);
+            option.textContent = material.name;
+            dom.materialSelector.appendChild(option);
         });
 
-        const addButton = document.createElement('button');
-        addButton.type = 'button';
-        addButton.className = 'add-material-btn';
-        addButton.innerHTML = '<span aria-hidden="true">＋</span> 자재 추가';
-        addButton.addEventListener('click', addMaterial);
-        dom.materialSelector.appendChild(addButton);
+        dom.materialSelector.value = String(currentMaterial);
     }
 
     function renderSampleSelector() {
@@ -346,24 +320,17 @@
         const samples = getCurrentMaterial().samples;
 
         samples.forEach((sample, index) => {
-            const button = document.createElement('button');
+            const option = document.createElement('option');
             const filledCount = sample.measurements.filter(value => value !== null).length;
-            button.type = 'button';
-            button.className = 'sample-btn';
-            button.textContent = String(index + 1);
-            button.setAttribute('aria-label', `시료 ${index + 1}, ${filledCount}개 입력`);
-            if (index === currentSample) {
-                button.classList.add('active');
-                button.setAttribute('aria-current', 'true');
-            }
-            if (filledCount === MEASUREMENTS_PER_SAMPLE) {
-                button.classList.add('completed');
-            } else if (filledCount > 0) {
-                button.classList.add('in-progress');
-            }
-            button.addEventListener('click', () => selectSample(index));
-            dom.sampleSelector.appendChild(button);
+            const status = filledCount === MEASUREMENTS_PER_SAMPLE
+                ? '✓'
+                : `${filledCount}/${MEASUREMENTS_PER_SAMPLE}`;
+            option.value = String(index);
+            option.textContent = `시료 ${index + 1} · ${status}`;
+            dom.sampleSelector.appendChild(option);
         });
+
+        dom.sampleSelector.value = String(currentSample);
     }
 
     function renderDataGrid() {
@@ -446,7 +413,11 @@
             }
 
             const sampleCell = document.createElement('td');
-            sampleCell.innerHTML = `<span class="sample-number">#${index + 1}</span><span class="sample-count">${filledCount}/${MEASUREMENTS_PER_SAMPLE}</span>`;
+            sampleCell.textContent = `#${index + 1}`;
+
+            const countCell = document.createElement('td');
+            countCell.textContent = `${filledCount}/${MEASUREMENTS_PER_SAMPLE}`;
+            countCell.classList.toggle('completed-count', filledCount === MEASUREMENTS_PER_SAMPLE);
 
             const minCell = document.createElement('td');
             minCell.textContent = formatMeasurement(sample.min);
@@ -454,15 +425,13 @@
             const avgCell = document.createElement('td');
             avgCell.textContent = formatMeasurement(sample.avg);
 
-            row.append(sampleCell, minCell, avgCell);
+            row.append(sampleCell, countCell, minCell, avgCell);
             dom.summaryTableBody.appendChild(row);
         });
     }
 
     function updateCurrentTitle() {
-        const material = getCurrentMaterial();
-        dom.currentSampleTitle.textContent = `${material.name} · 시료 ${currentSample + 1}`;
-        dom.contextText.textContent = `${material.name} / 시료 ${currentSample + 1}`;
+        dom.currentSampleTitle.textContent = `시료 ${currentSample + 1} 측정값 (μm)`;
     }
 
     function renderAll() {
@@ -847,186 +816,275 @@
         }
     }
 
-    const DIGIT_WORDS = new Map([
+    const SINO_DIGITS = new Map([
+        ['영', 0], ['공', 0], ['일', 1], ['이', 2], ['삼', 3],
+        ['사', 4], ['오', 5], ['육', 6], ['칠', 7], ['팔', 8], ['구', 9]
+    ]);
+    const NATIVE_DIGITS = new Map([
         ['아홉', 9], ['여덟', 8], ['일곱', 7], ['여섯', 6], ['다섯', 5],
-        ['하나', 1], ['한', 1], ['둘', 2], ['두', 2], ['셋', 3], ['세', 3],
-        ['넷', 4], ['네', 4], ['영', 0], ['공', 0], ['일', 1], ['이', 2],
-        ['삼', 3], ['사', 4], ['오', 5], ['육', 6], ['칠', 7], ['팔', 8], ['구', 9]
+        ['하나', 1], ['한', 1], ['둘', 2], ['두', 2], ['셋', 3], ['세', 3], ['넷', 4], ['네', 4]
     ]);
     const NATIVE_TENS = new Map([
         ['아흔', 90], ['여든', 80], ['일흔', 70], ['예순', 60], ['쉰', 50],
         ['마흔', 40], ['서른', 30], ['스물', 20], ['열', 10]
     ]);
     const SMALL_UNITS = new Map([['천', 1000], ['백', 100], ['십', 10]]);
-    const LARGE_UNITS = new Map([['만', 10000]]);
-    const KOREAN_NUMBER_KEYS = [
-        ...DIGIT_WORDS.keys(),
+    const SEPARATOR_WORDS = ['그다음', '다음값', '그리고', '다음'];
+    const NUMBER_WORDS = [
+        ...SINO_DIGITS.keys(),
+        ...NATIVE_DIGITS.keys(),
         ...NATIVE_TENS.keys(),
         ...SMALL_UNITS.keys(),
-        ...LARGE_UNITS.keys()
+        ...SEPARATOR_WORDS,
+        '점'
     ].sort((a, b) => b.length - a.length);
 
-    function tokenizeKoreanNumber(text) {
+    function tokenizeMeasurementText(text) {
         const tokens = [];
         let index = 0;
 
         while (index < text.length) {
-            const digitMatch = text.slice(index).match(/^\d+/);
-            if (digitMatch) {
-                tokens.push({
-                    type: 'number',
-                    value: Number(digitMatch[0]),
-                    raw: digitMatch[0],
-                    sequence: true
-                });
-                index += digitMatch[0].length;
+            const rest = text.slice(index);
+
+            const space = rest.match(/^\s+/);
+            if (space) {
+                index += space[0].length;
+                continue;
+            }
+            if (rest[0] === ',' || rest[0] === '/') {
+                tokens.push({ type: 'separator' });
+                index += 1;
                 continue;
             }
 
-            const key = KOREAN_NUMBER_KEYS.find(candidate => text.startsWith(candidate, index));
-            if (!key) {
+            const arabic = rest.match(/^\d+(?:\.\d+)?/);
+            if (arabic) {
+                tokens.push({ type: 'arabic', text: arabic[0] });
+                index += arabic[0].length;
+                continue;
+            }
+
+            const word = NUMBER_WORDS.find(candidate => rest.startsWith(candidate));
+            if (!word) {
                 return null;
             }
 
-            if (DIGIT_WORDS.has(key)) {
-                tokens.push({
-                    type: 'number',
-                    value: DIGIT_WORDS.get(key),
-                    raw: String(DIGIT_WORDS.get(key)),
-                    sequence: true
-                });
-            } else if (NATIVE_TENS.has(key)) {
-                tokens.push({ type: 'nativeTen', value: NATIVE_TENS.get(key) });
-            } else if (SMALL_UNITS.has(key)) {
-                tokens.push({ type: 'smallUnit', value: SMALL_UNITS.get(key) });
+            if (SINO_DIGITS.has(word)) {
+                tokens.push({ type: 'digit', value: SINO_DIGITS.get(word) });
+            } else if (NATIVE_DIGITS.has(word)) {
+                tokens.push({ type: 'nativeDigit', value: NATIVE_DIGITS.get(word) });
+            } else if (NATIVE_TENS.has(word)) {
+                tokens.push({ type: 'nativeTen', value: NATIVE_TENS.get(word) });
+            } else if (SMALL_UNITS.has(word)) {
+                tokens.push({ type: 'unit', value: SMALL_UNITS.get(word) });
+            } else if (word === '점') {
+                tokens.push({ type: 'point' });
             } else {
-                tokens.push({ type: 'largeUnit', value: LARGE_UNITS.get(key) });
+                tokens.push({ type: 'separator' });
             }
-            index += key.length;
+            index += word.length;
         }
 
         return tokens;
     }
 
-    function parseKoreanInteger(text) {
-        if (!text) {
-            return 0;
-        }
-        if (/^\d+$/.test(text)) {
-            return Number(text);
-        }
+    function readIntegerPart(tokens, start) {
+        const first = tokens[start];
 
-        const tokens = tokenizeKoreanNumber(text);
-        if (!tokens || tokens.length === 0) {
-            return null;
+        if (first.type === 'nativeTen') {
+            const next = tokens[start + 1];
+            return next?.type === 'nativeDigit'
+                ? { value: first.value + next.value, next: start + 2 }
+                : { value: first.value, next: start + 1 };
         }
 
-        const hasUnit = tokens.some(token =>
-            token.type === 'smallUnit' || token.type === 'largeUnit'
-        );
-        const hasNativeTen = tokens.some(token => token.type === 'nativeTen');
-
-        if (!hasUnit && !hasNativeTen) {
-            return Number(tokens.map(token => token.raw).join(''));
+        // "팔 육"처럼 자리 단위 없이 숫자만 읽은 경우
+        let runEnd = start;
+        while (tokens[runEnd]?.type === 'digit' && tokens[runEnd + 1]?.type !== 'unit') {
+            runEnd += 1;
+        }
+        if (runEnd - start >= 2) {
+            const digits = tokens.slice(start, runEnd).map(token => token.value).join('');
+            return { value: Number(digits), next: runEnd };
+        }
+        if (runEnd - start === 1) {
+            // "네", "이" 같은 짧은 말이 값으로 저장되지 않도록 소수점이 있을 때만 허용합니다.
+            return tokens[runEnd]?.type === 'point'
+                ? { value: first.value, next: runEnd }
+                : null;
         }
 
-        if (!hasUnit && hasNativeTen) {
-            return tokens.reduce((sum, token) => sum + token.value, 0);
+        let value = 0;
+        let lastUnit = Infinity;
+        let index = start;
+
+        if (first.type === 'arabic') {
+            value = Number(first.text);
+            const zeros = first.text.match(/0*$/)[0].length;
+            lastUnit = value === 0 ? 1 : 10 ** zeros;
+            index += 1;
         }
 
-        let total = 0;
-        let section = 0;
-        let currentNumber = null;
+        while (index < tokens.length) {
+            const token = tokens[index];
+            const next = tokens[index + 1];
 
-        for (const token of tokens) {
-            if (token.type === 'number') {
-                currentNumber = token.value;
-            } else if (token.type === 'nativeTen') {
-                section += token.value;
-                currentNumber = null;
-            } else if (token.type === 'smallUnit') {
-                section += (currentNumber === null ? 1 : currentNumber) * token.value;
-                currentNumber = null;
-            } else if (token.type === 'largeUnit') {
-                section += currentNumber === null ? 0 : currentNumber;
-                total += (section || 1) * token.value;
-                section = 0;
-                currentNumber = null;
+            if (token.type === 'unit' && token.value < lastUnit) {
+                value += token.value;
+                lastUnit = token.value;
+                index += 1;
+            } else if (
+                token.type === 'digit' && next?.type === 'unit' &&
+                token.value > 0 && next.value < lastUnit
+            ) {
+                value += token.value * next.value;
+                lastUnit = next.value;
+                index += 2;
+            } else {
+                if (
+                    token.type === 'digit' && next?.type !== 'unit' &&
+                    token.value > 0 && lastUnit > 1 && index > start
+                ) {
+                    value += token.value;
+                    index += 1;
+                }
+                break;
             }
         }
 
-        return total + section + (currentNumber === null ? 0 : currentNumber);
+        return index > start ? { value, next: index } : null;
     }
 
-    function parseKoreanNumber(text) {
-        const compact = String(text)
-            .replace(/빽/g, '백')
-            .replace(/쩜/g, '점')
-            .replace(/[,\s]/g, '')
-            .replace(/100(?=[영공일이삼사오육칠팔구십])/g, '백');
+    function readNumber(tokens, start) {
+        const first = tokens[start];
+        if (first.type === 'arabic' && first.text.includes('.')) {
+            return { value: Number(first.text), next: start + 1 };
+        }
 
-        if (!compact || (compact.match(/점/g) || []).length > 1) {
+        const integerPart = readIntegerPart(tokens, start);
+        if (!integerPart) {
             return null;
         }
-
-        const [integerPart, decimalPart] = compact.split('점');
-        const integerValue = parseKoreanInteger(integerPart);
-        if (integerValue === null || integerValue === undefined) {
-            return null;
-        }
-        if (decimalPart === undefined) {
-            return integerValue;
+        if (tokens[integerPart.next]?.type !== 'point') {
+            return integerPart;
         }
 
-        const decimalTokens = tokenizeKoreanNumber(decimalPart);
-        if (!decimalTokens || decimalTokens.length === 0) {
-            return null;
+        let index = integerPart.next + 1;
+        let decimals = '';
+        if (tokens[index]?.type === 'arabic' && !tokens[index].text.includes('.')) {
+            decimals = tokens[index].text;
+            index += 1;
+        } else {
+            // 뒤에 단위나 "점"이 붙은 숫자는 다음 값의 시작입니다.
+            while (
+                tokens[index]?.type === 'digit' &&
+                tokens[index + 1]?.type !== 'unit' &&
+                tokens[index + 1]?.type !== 'point'
+            ) {
+                decimals += String(tokens[index].value);
+                index += 1;
+            }
         }
 
-        const hasDecimalUnit = decimalTokens.some(token =>
-            token.type === 'smallUnit' ||
-            token.type === 'largeUnit' ||
-            token.type === 'nativeTen'
-        );
-        const decimalDigits = hasDecimalUnit
-            ? String(parseKoreanInteger(decimalPart))
-            : decimalTokens.map(token => token.raw).join('');
-
-        if (!/^\d+$/.test(decimalDigits)) {
-            return null;
-        }
-        return integerValue + Number(`0.${decimalDigits}`);
+        return decimals
+            ? { value: Number(`${integerPart.value}.${decimals}`), next: index }
+            : null;
     }
 
     function extractMeasurementNumbers(transcript) {
         const normalized = String(transcript)
-            .trim()
-            .replace(/마이크로미터|마이크론|미크론|μm/gi, '')
+            .replace(/마이크로\s*미터|마이크론|미크론|마이크로|㎛|μm|µm/gi, '')
             .replace(/측정값|측정|입력값|입력|값은|값/g, '')
+            .replace(/빽/g, '백')
             .replace(/쩜/g, '점')
-            .replace(/\s*점\s*/g, '점')
-            .replace(/,/g, '');
+            .replace(/[.!?。\s]+$/, '')
+            .replace(/(\d)\s*(?:이요|이에요)$/, '$1');
 
-        const hasKoreanNumberWord = KOREAN_NUMBER_KEYS.some(key => normalized.includes(key));
-        const arabicMatches = normalized.match(/\d+(?:\.\d+)?/g);
-        if (arabicMatches && !hasKoreanNumberWord) {
-            return arabicMatches
-                .map(value => Number(value))
-                .filter(value => Number.isFinite(value));
-        }
-
-        const segments = normalized
-            .split(/\s*(?:그리고|그다음|다음값|\/)\s*/)
-            .map(segment => segment.trim())
-            .filter(Boolean);
-
-        if (segments.length === 0) {
+        // "팔십이요"는 80인지 82인지 알 수 없으므로 저장하지 않습니다.
+        if (/[가-힣]이(?:요|에요)$/.test(normalized)) {
             return [];
         }
 
-        return segments
-            .map(segment => parseKoreanNumber(segment))
-            .filter(value => value !== null && Number.isFinite(value));
+        const tokens = tokenizeMeasurementText(
+            normalized.replace(/\s*(?:입니다|예요|에요|요)$/, '')
+        );
+        if (!tokens) {
+            return [];
+        }
+
+        // 일부라도 해석하지 못하면 순서가 어긋나지 않도록 문장 전체를 버립니다.
+        const values = [];
+        let index = 0;
+        while (index < tokens.length) {
+            if (tokens[index].type === 'separator') {
+                index += 1;
+                continue;
+            }
+            const parsed = readNumber(tokens, index);
+            if (!parsed || !Number.isFinite(parsed.value)) {
+                return [];
+            }
+            values.push(parsed.value);
+            index = parsed.next;
+        }
+        return values;
+    }
+
+    function isValidVoiceRange(range) {
+        return Number.isFinite(range?.min) && Number.isFinite(range?.max) &&
+            range.min >= MIN_MEASUREMENT && range.max <= MAX_MEASUREMENT &&
+            range.min < range.max;
+    }
+
+    function loadVoiceRange() {
+        try {
+            const stored = JSON.parse(localStorage.getItem(VOICE_RANGE_KEY));
+            if (isValidVoiceRange(stored)) {
+                voiceRange = { min: stored.min, max: stored.max };
+            }
+        } catch (error) {
+            console.warn('음성 허용 범위를 읽지 못했습니다.', error);
+        }
+    }
+
+    function renderVoiceRange() {
+        dom.voiceRangeMin.value = String(voiceRange.min);
+        dom.voiceRangeMax.value = String(voiceRange.max);
+    }
+
+    function updateVoiceRange() {
+        const minText = dom.voiceRangeMin.value.trim();
+        const maxText = dom.voiceRangeMax.value.trim();
+        const range = { min: Number(minText), max: Number(maxText) };
+
+        if (!minText || !maxText || !isValidVoiceRange(range)) {
+            renderVoiceRange();
+            showToast('허용 범위는 최소가 최대보다 작아야 합니다.', 'error');
+            return;
+        }
+
+        voiceRange = range;
+        try {
+            localStorage.setItem(VOICE_RANGE_KEY, JSON.stringify(range));
+        } catch (error) {
+            console.warn('음성 허용 범위를 저장하지 못했습니다.', error);
+        }
+        showToast(`음성 허용 범위: ${range.min} ~ ${range.max} μm`, 'success');
+    }
+
+    function isCurrentSampleFull() {
+        return findNextEmptyIndex(0) < 0;
+    }
+
+    function getSampleFullGuide() {
+        const nextAction = currentSample >= TOTAL_SAMPLES - 1 ? '입력 완료' : '다음 시료';
+        return `20개 입력 완료 · "다음" ${nextAction}, "다시" 마지막 값 취소`;
+    }
+
+    function getListeningMessage() {
+        return isCurrentSampleFull()
+            ? getSampleFullGuide()
+            : '듣고 있습니다. 측정값을 말씀해주세요.';
     }
 
     function setVoiceStatus(message, state = voiceState) {
@@ -1090,6 +1148,48 @@
         }
     }
 
+    async function acquireWakeLock() {
+        if (!('wakeLock' in navigator) || wakeLock || document.visibilityState !== 'visible') {
+            return;
+        }
+        try {
+            const lock = await navigator.wakeLock.request('screen');
+            if (!shouldBeListening) {
+                lock.release().catch(() => {});
+                return;
+            }
+            wakeLock = lock;
+            lock.addEventListener('release', () => {
+                if (wakeLock === lock) {
+                    wakeLock = null;
+                }
+            });
+        } catch (error) {
+            console.warn('화면 꺼짐 방지를 사용할 수 없습니다.', error);
+        }
+    }
+
+    function releaseWakeLock() {
+        const lock = wakeLock;
+        wakeLock = null;
+        lock?.release().catch(() => {});
+    }
+
+    function handleVisibilityChange() {
+        if (!shouldBeListening) {
+            return;
+        }
+        if (document.visibilityState === 'hidden') {
+            clearVoiceRetryTimer();
+            invalidateRecognition();
+            updateVoiceVisual(false);
+        } else {
+            voiceRetryCount = 0;
+            acquireWakeLock();
+            startRecognitionAttempt(true);
+        }
+    }
+
     function invalidateRecognition() {
         recognitionToken += 1;
         const activeRecognition = recognition;
@@ -1115,6 +1215,7 @@
 
         if (voiceRetryCount >= MAX_VOICE_RETRIES) {
             shouldBeListening = false;
+            releaseWakeLock();
             voiceState = 'error';
             setVoiceStatus('음성 연결에 반복해서 실패했습니다. 잠시 후 다시 시작해주세요.', 'error');
             updateVoiceVisual(false);
@@ -1139,7 +1240,19 @@
         }, delay);
     }
 
-    function createRecognition() {
+    function scheduleQuietRestart() {
+        if (voiceRetryTimer) {
+            return;
+        }
+        voiceRetryTimer = window.setTimeout(() => {
+            voiceRetryTimer = null;
+            if (shouldBeListening) {
+                startRecognitionAttempt(true);
+            }
+        }, QUICK_RESTART_MS);
+    }
+
+    function createRecognition(quiet) {
         const instance = new SpeechRecognitionCtor();
         const token = ++recognitionToken;
 
@@ -1149,13 +1262,34 @@
         instance.maxAlternatives = 1;
 
         const isCurrent = () => recognition === instance && recognitionToken === token;
+        const startedAt = Date.now();
+        let sessionFailed = false;
+        const processedFinals = [];
+        let lastFinalText = '';
+        let lastFinalAt = 0;
+
+        // 일부 Android는 앞서 확정한 문장을 다시 보내므로 새로 말한 부분만 남깁니다.
+        const takeNewFinalText = text => {
+            const now = Date.now();
+            let newText = text;
+            if (text === lastFinalText && now - lastFinalAt < DUPLICATE_FINAL_MS) {
+                newText = '';
+            } else if (lastFinalText && text.startsWith(`${lastFinalText} `)) {
+                newText = text.slice(lastFinalText.length).trim();
+            }
+            lastFinalText = text;
+            lastFinalAt = now;
+            return newText;
+        };
 
         instance.onstart = () => {
             if (!isCurrent()) {
                 return;
             }
             voiceState = 'listening';
-            setVoiceStatus('듣고 있습니다. 측정값을 말씀해주세요.', 'listening');
+            if (!quiet) {
+                setVoiceStatus(getListeningMessage(), 'listening');
+            }
             updateVoiceVisual(true);
             dom.restartVoiceBtn.hidden = true;
         };
@@ -1172,7 +1306,17 @@
             for (let index = event.resultIndex; index < event.results.length; index += 1) {
                 const transcript = event.results[index][0].transcript.trim();
                 if (event.results[index].isFinal) {
-                    finalTranscripts.push(transcript);
+                    const isReplay = processedFinals[index] === transcript && (
+                        index < event.results.length - 1 ||
+                        Date.now() - lastFinalAt < DUPLICATE_FINAL_MS
+                    );
+                    if (!isReplay) {
+                        processedFinals[index] = transcript;
+                        const newText = takeNewFinalText(transcript);
+                        if (newText) {
+                            finalTranscripts.push(newText);
+                        }
+                    }
                 } else {
                     interimTranscript += `${transcript} `;
                 }
@@ -1196,12 +1340,19 @@
                 return;
             }
 
+            // 측정 중 침묵은 정상입니다. 세션이 끝나면 onend에서 바로 다시 듣습니다.
+            if (event.error === 'no-speech') {
+                return;
+            }
+
+            sessionFailed = true;
             voiceState = 'error';
             updateVoiceVisual(false);
 
             if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                 shouldBeListening = false;
                 clearVoiceRetryTimer();
+                releaseWakeLock();
                 setVoiceStatus('마이크 권한이 차단되었습니다. 브라우저 설정에서 권한을 허용해주세요.', 'error');
                 dom.restartVoiceBtn.hidden = false;
                 return;
@@ -1222,9 +1373,18 @@
                 return;
             }
             recognition = null;
-            updateVoiceVisual(false);
-            if (shouldBeListening) {
+            if (!shouldBeListening || document.visibilityState === 'hidden') {
+                updateVoiceVisual(false);
+                return;
+            }
+            if (sessionFailed) {
                 scheduleVoiceRestart('음성 연결이 종료되었습니다.');
+            } else if (Date.now() - startedAt < HEALTHY_SESSION_MS) {
+                updateVoiceVisual(false);
+                scheduleVoiceRestart('음성 연결이 바로 종료되었습니다.');
+            } else {
+                voiceRetryCount = 0;
+                scheduleQuietRestart();
             }
         };
 
@@ -1242,16 +1402,18 @@
         return instance;
     }
 
-    function startRecognitionAttempt() {
-        if (!shouldBeListening) {
+    function startRecognitionAttempt(quiet = false) {
+        if (!shouldBeListening || document.visibilityState === 'hidden') {
             return;
         }
 
         clearVoiceRetryTimer();
         invalidateRecognition();
-        recognition = createRecognition();
+        recognition = createRecognition(quiet);
         voiceState = 'connecting';
-        setVoiceStatus('마이크에 연결하고 있습니다…', 'connecting');
+        if (!quiet) {
+            setVoiceStatus('마이크에 연결하고 있습니다…', 'connecting');
+        }
 
         try {
             recognition.start();
@@ -1292,6 +1454,7 @@
         dom.voiceResult.dataset.final = 'false';
         dom.restartVoiceBtn.hidden = true;
         openModal(dom.voiceModal, dom.stopVoiceBtn);
+        acquireWakeLock();
         startRecognitionAttempt();
     }
 
@@ -1303,11 +1466,13 @@
         shouldBeListening = true;
         voiceRetryCount = 0;
         dom.restartVoiceBtn.hidden = true;
+        acquireWakeLock();
         startRecognitionAttempt();
     }
 
     function stopVoiceInput() {
         shouldBeListening = false;
+        releaseWakeLock();
         voiceState = 'idle';
         clearVoiceRetryTimer();
         invalidateRecognition();
@@ -1319,6 +1484,7 @@
 
     function completeVoiceInput() {
         shouldBeListening = false;
+        releaseWakeLock();
         voiceState = 'complete';
         clearVoiceRetryTimer();
         invalidateRecognition();
@@ -1376,10 +1542,11 @@
                 `아직 ${MEASUREMENTS_PER_SAMPLE - filledCount}개가 비어 있습니다. 모두 입력한 뒤 "다음"이라고 말해주세요.`,
                 'warning'
             );
+            playFeedback('undo');
             return;
         }
         if (currentSample >= TOTAL_SAMPLES - 1) {
-            setVoiceStatus('마지막 시료까지 모두 입력했습니다.', 'complete');
+            completeVoiceInput();
             return;
         }
 
@@ -1393,7 +1560,14 @@
         renderSummaryTable();
         updateCurrentTitle();
         saveData('다음 시료 선택 저장됨');
-        setVoiceStatus(`시료 ${currentSample + 1}입니다. 첫 번째 측정값을 말씀해주세요.`, 'listening');
+        playFeedback('input');
+        const nextEmptyIndex = findNextEmptyIndex(0);
+        setVoiceStatus(
+            nextEmptyIndex < 0
+                ? `시료 ${currentSample + 1}은 이미 20개가 입력되어 있습니다. "다음"이라고 말해주세요.`
+                : `시료 ${currentSample + 1}입니다. ${nextEmptyIndex + 1}번 측정값을 말씀해주세요.`,
+            nextEmptyIndex < 0 ? 'complete' : 'listening'
+        );
     }
 
     function inputVoiceNumber(number) {
@@ -1407,7 +1581,7 @@
             voiceCursorIndex >= 0 ? voiceCursorIndex : 0
         );
         if (targetIndex < 0) {
-            completeVoiceInput();
+            setVoiceStatus(getSampleFullGuide(), 'warning');
             return false;
         }
 
@@ -1446,7 +1620,11 @@
             );
         } else {
             voiceCursorIndex = -1;
-            completeVoiceInput();
+            clearCurrentHighlights();
+            setVoiceStatus(
+                `${targetIndex + 1}번에 ${formatMeasurement(validation.value)} μm 입력됨 · ${getSampleFullGuide()}`,
+                'complete'
+            );
         }
         return true;
     }
@@ -1490,41 +1668,64 @@
         );
     }
 
-    function processVoiceInput(transcript) {
-        const commandText = transcript.replace(/\s+/g, '');
+    function rejectVoiceInput(message) {
+        setVoiceStatus(message, 'warning');
+        playFeedback('undo');
+    }
 
-        if (/종료|그만|닫기/.test(commandText)) {
+    function processVoiceInput(transcript) {
+        const commandText = transcript.replace(/[\s.!?。]+/g, '');
+
+        if (/^(?:입력|음성)?(?:종료|닫기)$|^그만(?:해)?$/.test(commandText)) {
             stopVoiceInput();
             return;
         }
-        if (/다시|취소|되돌리기|뒤로/.test(commandText)) {
+        if (/^(?:마지막|방금|입력)?(?:다시|취소|되돌리기)$|^뒤로$/.test(commandText)) {
             undoLastVoiceInput();
             return;
         }
-        if (/다음|다음시료|넘어가/.test(commandText)) {
+        if (/^다음(?:시료)?(?:로)?$|^넘어가(?:자|기)?$/.test(commandText)) {
             moveToNextSampleByVoice();
             return;
         }
 
         const numbers = extractMeasurementNumbers(transcript);
         if (numbers.length === 0) {
-            setVoiceStatus('숫자를 확인하지 못했습니다. 예: "십이 점 오"', 'warning');
+            rejectVoiceInput('숫자를 확인하지 못해 저장하지 않았습니다. 다시 말씀해주세요. 예: "팔십육 점 사"');
+            return;
+        }
+
+        const outOfRange = numbers.find(
+            number => number < voiceRange.min || number > voiceRange.max
+        );
+        if (outOfRange !== undefined) {
+            rejectVoiceInput(
+                `${outOfRange} μm는 허용 범위(${voiceRange.min}~${voiceRange.max})를 벗어나 저장하지 않았습니다. 다시 말씀해주세요.`
+            );
+            return;
+        }
+
+        const remaining = getCurrentSample().measurements.filter(value => value === null).length;
+        if (remaining === 0) {
+            rejectVoiceInput(getSampleFullGuide());
+            return;
+        }
+        if (numbers.length > remaining) {
+            rejectVoiceInput(
+                `남은 칸은 ${remaining}개인데 ${numbers.length}개를 들었습니다. 저장하지 않았으니 다시 말씀해주세요.`
+            );
             return;
         }
 
         let insertedCount = 0;
         for (const number of numbers) {
-            if (inputVoiceNumber(number)) {
-                insertedCount += 1;
-                if (!shouldBeListening) {
-                    break;
-                }
-            } else {
+            if (!inputVoiceNumber(number)) {
                 break;
             }
+            insertedCount += 1;
         }
 
-        if (numbers.length > 1 && insertedCount > 0 && shouldBeListening) {
+        if (numbers.length > 1 && insertedCount > 0 && !isCurrentSampleFull()) {
             setVoiceStatus(`${insertedCount}개 측정값을 순서대로 입력했습니다.`, 'listening');
         }
     }
@@ -1555,6 +1756,21 @@
         closeModal(dom.manualModal);
     }
 
+    function openMenu() {
+        openModal(dom.menuModal, dom.closeMenuBtn);
+    }
+
+    function closeMenu() {
+        closeModal(dom.menuModal);
+    }
+
+    function bindMenuAction(button, action) {
+        button.addEventListener('click', () => {
+            closeMenu();
+            action();
+        });
+    }
+
     function handleModalKeydown(event) {
         if (!activeModal || activeModal.hidden) {
             return;
@@ -1566,6 +1782,8 @@
                 stopVoiceInput();
             } else if (activeModal === dom.voiceCompleteModal) {
                 closeVoiceComplete();
+            } else if (activeModal === dom.menuModal) {
+                closeMenu();
             } else {
                 closeManual();
             }
@@ -1638,7 +1856,29 @@
     }
 
     function bindEvents() {
-        dom.manualBtn.addEventListener('click', openManual);
+        dom.materialSelector.addEventListener('change', event => selectMaterial(Number(event.target.value)));
+        dom.sampleSelector.addEventListener('change', event => selectSample(Number(event.target.value)));
+
+        dom.menuBtn.addEventListener('click', openMenu);
+        dom.closeMenuBtn.addEventListener('click', closeMenu);
+        dom.menuModal.addEventListener('click', event => {
+            if (event.target === dom.menuModal) {
+                closeMenu();
+            }
+        });
+        bindMenuAction(dom.addMaterialBtn, addMaterial);
+        bindMenuAction(dom.renameMaterialBtn, () => renameMaterial(currentMaterial));
+        bindMenuAction(dom.deleteMaterialBtn, () => deleteMaterial(currentMaterial));
+        bindMenuAction(dom.manualBtn, openManual);
+        bindMenuAction(dom.exportCurrentBtn, exportCurrentMaterial);
+        bindMenuAction(dom.exportAllBtn, exportAllMaterials);
+        bindMenuAction(dom.backupBtn, exportBackup);
+        dom.installBtn.addEventListener('click', closeMenu);
+        dom.importFile.addEventListener('change', event => {
+            closeMenu();
+            importBackup(event);
+        });
+
         dom.closeManualBtn.addEventListener('click', closeManual);
         dom.confirmManualBtn.addEventListener('click', closeManual);
         dom.manualModal.addEventListener('click', event => {
@@ -1662,11 +1902,10 @@
 
         dom.clearBtn.addEventListener('click', clearCurrentSample);
         dom.nextBtn.addEventListener('click', goToNextSample);
-        dom.exportCurrentBtn.addEventListener('click', exportCurrentMaterial);
-        dom.exportAllBtn.addEventListener('click', exportAllMaterials);
-        dom.backupBtn.addEventListener('click', exportBackup);
-        dom.importFile.addEventListener('change', importBackup);
         document.addEventListener('keydown', handleModalKeydown);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        dom.voiceRangeMin.addEventListener('change', updateVoiceRange);
+        dom.voiceRangeMax.addEventListener('change', updateVoiceRange);
     }
 
     function cacheDom() {
@@ -1675,7 +1914,6 @@
             sampleSelector: document.getElementById('sampleSelector'),
             dataGrid: document.getElementById('dataGrid'),
             currentSampleTitle: document.getElementById('currentSampleTitle'),
-            contextText: document.getElementById('contextText'),
             progressIndicator: document.getElementById('progressIndicator'),
             progressTrack: document.getElementById('progressTrack'),
             progressBar: document.getElementById('progressBar'),
@@ -1685,6 +1923,14 @@
             saveStatus: document.getElementById('saveStatus'),
             saveStatusText: document.getElementById('saveStatusText'),
             toast: document.getElementById('toast'),
+            menuBtn: document.getElementById('menuBtn'),
+            menuModal: document.getElementById('menuModal'),
+            closeMenuBtn: document.getElementById('closeMenuBtn'),
+            voiceRangeMin: document.getElementById('voiceRangeMin'),
+            voiceRangeMax: document.getElementById('voiceRangeMax'),
+            addMaterialBtn: document.getElementById('addMaterialBtn'),
+            renameMaterialBtn: document.getElementById('renameMaterialBtn'),
+            deleteMaterialBtn: document.getElementById('deleteMaterialBtn'),
             manualBtn: document.getElementById('manualBtn'),
             installBtn: document.getElementById('installBtn'),
             manualModal: document.getElementById('manualModal'),
@@ -1720,6 +1966,8 @@
         cacheDom();
         bindEvents();
         const loadResult = initializeData();
+        loadVoiceRange();
+        renderVoiceRange();
         renderAll();
         setSaveStatus('saved', loadResult.loaded ? '저장 데이터 복원됨' : '새 측정 준비됨');
         if (loadResult.migrated) {
